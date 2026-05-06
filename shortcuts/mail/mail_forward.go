@@ -242,6 +242,8 @@ var MailForward = common.Shortcut{
 		var composedHTMLBody string
 		var composedTextBody string
 		var srcInlineBytes int64
+		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if useHTML {
 			if err := validateInlineImageURLs(sourceMsg); err != nil {
 				return fmt.Errorf("forward blocked: %w", err)
@@ -267,6 +269,12 @@ var MailForward = common.Shortcut{
 			if sigResult != nil {
 				bodyWithSig += draftpkg.SignatureSpacing() + draftpkg.BuildSignatureHTML(sigResult.ID, sigResult.RenderedContent)
 			}
+			// Writing-path lint: lint user-authored body + signature, NOT the
+			// forward quote / large-attachment card derived from the original
+			// message (spec §4.3 + S2 contract «Sibling-divergence ledger»).
+			cleaned, rep := runWritePathLint(bodyWithSig)
+			bodyWithSig = cleaned
+			lintApplied, lintBlocked = rep.Applied, rep.Blocked
 			composedHTMLBody = bodyWithSig + origLargeAttCard + forwardQuote
 			bld = bld.HTMLBody([]byte(composedHTMLBody))
 			bld = addSignatureImagesToBuilder(bld, sigResult)
@@ -480,7 +488,10 @@ var MailForward = common.Shortcut{
 			return fmt.Errorf("failed to create draft: %w", err)
 		}
 		if !confirmSend {
-			runtime.Out(buildDraftSavedOutput(draftResult, mailboxID), nil)
+			out := buildDraftSavedOutput(draftResult, mailboxID)
+			out["lint_applied"] = lintApplied
+			out["original_blocked"] = lintBlocked
+			runtime.Out(out, nil)
 			hintSendDraft(runtime, mailboxID, draftResult.DraftID)
 			return nil
 		}
@@ -488,7 +499,10 @@ var MailForward = common.Shortcut{
 		if err != nil {
 			return fmt.Errorf("failed to send forward (draft %s created but not sent): %w", draftResult.DraftID, err)
 		}
-		runtime.Out(buildDraftSendOutput(resData, mailboxID), nil)
+		out := buildDraftSendOutput(resData, mailboxID)
+		out["lint_applied"] = lintApplied
+		out["original_blocked"] = lintBlocked
+		runtime.Out(out, nil)
 		hintMarkAsRead(runtime, mailboxID, messageId)
 		return nil
 	},

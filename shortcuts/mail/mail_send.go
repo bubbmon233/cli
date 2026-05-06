@@ -206,6 +206,10 @@ var MailSend = common.Shortcut{
 		var autoResolvedPaths []string
 		var composedHTMLBody string
 		var composedTextBody string
+		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		// Initialised as empty (non-nil) slices so the envelope always carries
+		// `lint_applied[]` / `original_blocked[]` even on the plain-text path.
+		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if plainText {
 			composedTextBody = body
 			bld = bld.TextBody([]byte(composedTextBody))
@@ -220,6 +224,15 @@ var MailSend = common.Shortcut{
 				return resolveErr
 			}
 			resolved = injectSignatureIntoBody(resolved, sigResult)
+			// Writing-path lint: AutoFix=true / Strict=false (spec §4.3 — the
+			// writing-path safety contract has no `--no-lint` opt-out). Runs
+			// AFTER applyTemplate (above) + ResolveLocalImagePaths +
+			// injectSignatureIntoBody so the lint sees the final HTML the
+			// recipient renderer will see (S2 contract «Pre-call vs in-call
+			// validation split» — Compose 5 row).
+			cleanedHTML, rep := runWritePathLint(resolved)
+			resolved = cleanedHTML
+			lintApplied, lintBlocked = rep.Applied, rep.Blocked
 			composedHTMLBody = resolved
 			bld = bld.HTMLBody([]byte(composedHTMLBody))
 			bld = addSignatureImagesToBuilder(bld, sigResult)
@@ -284,7 +297,10 @@ var MailSend = common.Shortcut{
 			return fmt.Errorf("failed to create draft: %w", err)
 		}
 		if !confirmSend {
-			runtime.Out(buildDraftSavedOutput(draftResult, mailboxID), nil)
+			out := buildDraftSavedOutput(draftResult, mailboxID)
+			out["lint_applied"] = lintApplied
+			out["original_blocked"] = lintBlocked
+			runtime.Out(out, nil)
 			hintSendDraft(runtime, mailboxID, draftResult.DraftID)
 			return nil
 		}
@@ -292,7 +308,10 @@ var MailSend = common.Shortcut{
 		if err != nil {
 			return fmt.Errorf("failed to send email (draft %s created but not sent): %w", draftResult.DraftID, err)
 		}
-		runtime.Out(buildDraftSendOutput(resData, mailboxID), nil)
+		out := buildDraftSendOutput(resData, mailboxID)
+		out["lint_applied"] = lintApplied
+		out["original_blocked"] = lintBlocked
+		runtime.Out(out, nil)
 		return nil
 	},
 }

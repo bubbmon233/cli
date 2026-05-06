@@ -253,6 +253,8 @@ var MailReplyAll = common.Shortcut{
 		var composedHTMLBody string
 		var composedTextBody string
 		var srcInlineBytes int64
+		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if useHTML {
 			if err := validateInlineImageURLs(sourceMsg); err != nil {
 				return fmt.Errorf("HTML reply-all blocked: %w", err)
@@ -270,6 +272,15 @@ var MailReplyAll = common.Shortcut{
 			if sigResult != nil {
 				bodyWithSig += draftpkg.SignatureSpacing() + draftpkg.BuildSignatureHTML(sigResult.ID, sigResult.RenderedContent)
 			}
+			// Writing-path lint: same isomorphic pattern as +reply (spec §4.3,
+			// S2 contract «N-way isomorphism»). Operate on bodyWithSig only;
+			// the `quoted` block from the original message must NOT be re-
+			// linted (it already passed RemoteSanitizer upstream and may
+			// contain Feishu-native quote-block classes that the lint allow-
+			// list intentionally permits in pass-through).
+			cleaned, rep := runWritePathLint(bodyWithSig)
+			bodyWithSig = cleaned
+			lintApplied, lintBlocked = rep.Applied, rep.Blocked
 			composedHTMLBody = bodyWithSig + quoted
 			bld = bld.HTMLBody([]byte(composedHTMLBody))
 			bld = addSignatureImagesToBuilder(bld, sigResult)
@@ -326,7 +337,10 @@ var MailReplyAll = common.Shortcut{
 			return fmt.Errorf("failed to create draft: %w", err)
 		}
 		if !confirmSend {
-			runtime.Out(buildDraftSavedOutput(draftResult, mailboxID), nil)
+			out := buildDraftSavedOutput(draftResult, mailboxID)
+			out["lint_applied"] = lintApplied
+			out["original_blocked"] = lintBlocked
+			runtime.Out(out, nil)
 			hintSendDraft(runtime, mailboxID, draftResult.DraftID)
 			return nil
 		}
@@ -334,7 +348,10 @@ var MailReplyAll = common.Shortcut{
 		if err != nil {
 			return fmt.Errorf("failed to send reply-all (draft %s created but not sent): %w", draftResult.DraftID, err)
 		}
-		runtime.Out(buildDraftSendOutput(resData, mailboxID), nil)
+		out := buildDraftSendOutput(resData, mailboxID)
+		out["lint_applied"] = lintApplied
+		out["original_blocked"] = lintBlocked
+		runtime.Out(out, nil)
 		hintMarkAsRead(runtime, mailboxID, messageId)
 		return nil
 	},

@@ -174,6 +174,33 @@ var MailDraftEdit = common.Shortcut{
 		if err != nil {
 			return err
 		}
+		// Writing-path lint for body ops only (S2 contract «Pre-call vs in-call
+		// validation split» — +draft-edit row): set_body / set_reply_body
+		// rewrite the body field; other ops (set_subject / set_recipients /
+		// add_attachment / etc.) operate on non-HTML fields and MUST NOT be
+		// linted. Lint runs after loadPatchFile parses JSON and BEFORE
+		// draftpkg.Apply writes into the snapshot. Each op's `value` is
+		// replaced with the cleaned HTML in place; findings accumulate across
+		// ops into a single per-patch report (spec §4.3).
+		lintApplied, lintBlocked := emptyLintEnvelopeFields()
+		for i := range patch.Ops {
+			op := &patch.Ops[i]
+			if op.Op != "set_body" && op.Op != "set_reply_body" {
+				continue
+			}
+			if op.Value == "" {
+				continue
+			}
+			if !bodyIsHTML(op.Value) {
+				// Plain-text body op — no lint pass needed (the HTML rule set
+				// is irrelevant), but the envelope still surfaces empty arrays.
+				continue
+			}
+			cleaned, rep := runWritePathLint(op.Value)
+			op.Value = cleaned
+			lintApplied = append(lintApplied, rep.Applied...)
+			lintBlocked = append(lintBlocked, rep.Blocked...)
+		}
 		dctx := &draftpkg.DraftCtx{FIO: runtime.FileIO()}
 		if len(patch.Ops) > 0 {
 			if err := draftpkg.Apply(dctx, snapshot, patch); err != nil {
@@ -197,6 +224,9 @@ var MailDraftEdit = common.Shortcut{
 		if updateResult.Reference != "" {
 			out["reference"] = updateResult.Reference
 		}
+		// Writing-path lint envelope (spec §4.3): both arrays always present.
+		out["lint_applied"] = lintApplied
+		out["original_blocked"] = lintBlocked
 		runtime.OutFormat(out, nil, func(w io.Writer) {
 			fmt.Fprintln(w, "Draft updated.")
 			fmt.Fprintf(w, "draft_id: %s\n", updateResult.DraftID)
