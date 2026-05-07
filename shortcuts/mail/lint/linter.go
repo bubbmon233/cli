@@ -572,10 +572,24 @@ func applyFeishuNativeStyles(parent *xhtml.Node, rep *Report, opts Options) {
 // hasInlineStyleProp reports whether the given style="..." string already
 // declares the named property. Lookup is case-insensitive on the property
 // name; whitespace around `:` and `;` is tolerated.
+//
+// Shorthand expansion: `margin-*` is also considered set when shorthand
+// `margin:` is present (same for `padding-*` / `padding:`, and the four
+// `border-*-style/color/width` longhands when `border:` shorthand is set).
+// Without this, ensureInlineStyleProps would append e.g. `margin-left:0`
+// onto a `margin:0 0 0 24px` shorthand and clobber the user-authored
+// 24px (mail-editor's native nested-list indent uses this exact shape).
 func hasInlineStyleProp(style, prop string) bool {
 	prop = strings.ToLower(strings.TrimSpace(prop))
 	if prop == "" {
 		return false
+	}
+	var shorthand string
+	switch {
+	case strings.HasPrefix(prop, "margin-"):
+		shorthand = "margin"
+	case strings.HasPrefix(prop, "padding-"):
+		shorthand = "padding"
 	}
 	for _, decl := range strings.Split(style, ";") {
 		decl = strings.TrimSpace(decl)
@@ -588,6 +602,9 @@ func hasInlineStyleProp(style, prop string) bool {
 		}
 		name := strings.ToLower(strings.TrimSpace(decl[:colon]))
 		if name == prop {
+			return true
+		}
+		if shorthand != "" && name == shorthand {
 			return true
 		}
 	}

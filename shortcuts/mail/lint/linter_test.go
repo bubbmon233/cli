@@ -372,6 +372,35 @@ func TestRun_StyleBorderPrefixAllowed(t *testing.T) {
 	}
 }
 
+// TestRun_FeishuListShorthandMarginPreserved guards the nested-list indent
+// regression: when a user writes shorthand `margin:0 0 0 24px` on an inner
+// <ul> (mail-editor's own native nested-list shape), the Feishu-list autofix
+// must NOT clobber it by appending `margin-left:0`. ensureInlineStyleProps
+// is supposed to skip props the user already declared, but earlier
+// hasInlineStyleProp was only matching longhand `margin-left:` literally
+// and missed the shorthand form, causing 24px indents to be reset to 0.
+func TestRun_FeishuListShorthandMarginPreserved(t *testing.T) {
+	in := `<ul style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;list-style-type:circle;font-size:14px" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">indented</span></span></li></ul>`
+	rep := Run(in, Options{AutoFix: true})
+	cleaned := rep.CleanedHTML
+	// Extract just the <ul ...> opening tag's style attr (li has its own
+	// independent margin-left:0 longhand which is correct — list indent
+	// belongs on the container, not the item).
+	ulOpen := cleaned
+	if i := strings.Index(ulOpen, ">"); i >= 0 {
+		ulOpen = ulOpen[:i]
+	}
+	if !strings.Contains(ulOpen, "margin:0px 0px 0px 24px") {
+		t.Errorf("shorthand margin with 24px left should survive on <ul>, ulOpen=%q", ulOpen)
+	}
+	// The bug signature: extra `margin-left:` appended after the shorthand
+	// on the <ul> element itself (CSS rule says the later one wins, so any
+	// margin-left:0 after the shorthand resets the indent to 0).
+	if strings.Contains(ulOpen, "margin-left") {
+		t.Errorf("autofix must not append margin-left longhand onto <ul> when shorthand already declares it, ulOpen=%q", ulOpen)
+	}
+}
+
 // =====================================================================
 // CleanedHTML output / contract guarantees (spec §4.3).
 // =====================================================================
