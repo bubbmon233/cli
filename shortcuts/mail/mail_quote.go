@@ -328,13 +328,18 @@ func formatMailDate(ms int64, lang string) string {
 // (whitespace, >, or />). This avoids false positives like "<brief.pdf>" or
 // "price < 100". The tag list follows the Chromium/WHATWG MIME sniffing approach
 // with additional common tags for email content.
+//
+// Must include every key in lint.warnAutofixTags so a body containing only
+// those tags (e.g. "<center>x</center>") still reaches the lint pipeline
+// instead of being short-circuited by EmptyReport in mail_lint_html.go.
 var htmlTagRe = regexp.MustCompile(
 	`(?i)<(?:` +
 		`!doctype\s+html|!--|` +
 		`html|head|body|div|p|br|span|a|b|i|em|strong|` +
 		`h[1-6]|ul|ol|li|table|tr|td|th|img|font|style|script|` +
 		`iframe|title|form|input|select|textarea|button|label|` +
-		`blockquote|pre|code|hr|section|article|header|footer|nav|main` +
+		`blockquote|pre|code|hr|section|article|header|footer|nav|main|` +
+		`center|marquee|blink` +
 		`)[\s/>]`)
 
 // bodyIsHTML reports whether s appears to contain HTML markup.
