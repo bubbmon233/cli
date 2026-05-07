@@ -6,10 +6,10 @@
 // `+draft-create`, `+reply`, `+reply-all`, `+forward`) and `+draft-edit` body
 // ops. The lib classifies HTML tags / attributes / inline styles into three
 // tiers (pass / warn-and-autofix / error-delete) per technical-design §4.4 and
-// the mail-editor `editor-kit` branch DOMPurify config (`ALLOW_UNKNOWN_PROTOCOLS:
-// true`, `forbidTags: ['style']`), but stricter — `<style>` / external `<link>`
-// / `<script>` / `<iframe>` / on*-handlers / `javascript:` URLs are removed
-// outright.
+// the mail-editor `editor-kit` branch DOMPurify config. `<style>` is passed
+// through verbatim (Feishu mail server-side sanitiser handles it on render);
+// `<script>` / `<iframe>` / external `<link>` / on*-handlers / `javascript:`
+// URLs are removed outright.
 //
 // The lib is deliberately decoupled from the cobra runtime so that it can be
 // re-used as a pure-CPU pass before `bld.HTMLBody(...)` (compose 5) /

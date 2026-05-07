@@ -5,6 +5,8 @@ package lint
 
 import (
 	"bytes"
+	"fmt"
+	"hash/fnv"
 	"strings"
 
 	xhtml "golang.org/x/net/html"
@@ -65,6 +67,7 @@ func Run(html string, opts Options) Report {
 	}
 
 	walk(root, &rep, opts)
+	applyFeishuNativeStyles(root, &rep, opts)
 
 	rep.HasErrorFindings = len(rep.Blocked) > 0
 	rep.HasWarningFindings = len(rep.Applied) > 0
@@ -437,8 +440,6 @@ func hintForBlockedTag(tag string) string {
 	switch tag {
 	case "script":
 		return "已整段删除（XSS 风险，服务端 RemoteSanitizer 必拒）"
-	case "style":
-		return "已删除 <style> 标签（飞书原生编辑器禁止内嵌样式表，请使用 inline style）"
 	case "iframe", "object", "embed":
 		return "已整段删除（不允许嵌入外部资源；如需展示富媒体，请改用 <img> 或邮件正文链接）"
 	case "form", "input", "select", "option", "button":
@@ -513,4 +514,535 @@ func renderFragment(root *xhtml.Node) string {
 		_ = xhtml.Render(&buf, child)
 	}
 	return buf.String()
+}
+
+// applyFeishuNativeStyles walks the tree (post-tag-pass) and ensures elements
+// that have known Feishu mail-editor native inline styles get them autofilled.
+// User-supplied inline styles always take precedence — this pass is purely
+// additive (only fills in missing properties). AutoFix=false short-circuits.
+//
+// Rules (visual parity with Feishu mail-editor's own output, captured from a
+// real mail-editor draft on 2026-05-07):
+//
+//   <ol> / <ul>     → margin-top:0;margin-bottom:0;margin-left:0;padding-left:0;list-style-position:inside
+//   <li>            → line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0;
+//                     margin-left:0;display:list-item;list-style-position:inside;
+//                     list-style-type:decimal (ol parent) | disc (ul parent);
+//                     font-family:inherit;font-size:14px
+//   <blockquote>    → padding-left:0;color:rgb(100,106,115);
+//                     border-left:2px solid rgb(187,191,196);margin:0
+//   <a>             → class="not-doclink" + cursor:pointer;text-decoration:none;
+//                     color:rgb(20,86,240)
+//   <p>             → rewritten to
+//                     <div style="margin-top:4px;margin-bottom:4px;line-height:1.6">
+//                       <div dir="auto" style="font-size:14px">...children...</div>
+//                     </div>
+//                     This is the only rewrite that changes tree shape; the
+//                     others only touch attributes.
+func applyFeishuNativeStyles(parent *xhtml.Node, rep *Report, opts Options) {
+	if !opts.AutoFix {
+		return
+	}
+	child := parent.FirstChild
+	for child != nil {
+		next := child.NextSibling
+		if child.Type == xhtml.ElementNode {
+			switch strings.ToLower(child.Data) {
+			case "ol", "ul":
+				ensureFeishuListStyle(child, rep)
+			case "li":
+				ensureFeishuListItemStyle(child, parent, rep)
+			case "blockquote":
+				ensureFeishuBlockquoteStyle(child, rep)
+			case "a":
+				ensureFeishuLinkStyle(child, rep)
+			case "p":
+				rewritePToFeishuDiv(child, rep)
+			}
+		}
+		// child may have been mutated (children moved into a wrapper);
+		// recurse only if it's still attached.
+		if child.Parent != nil {
+			applyFeishuNativeStyles(child, rep, opts)
+		}
+		child = next
+	}
+}
+
+// hasInlineStyleProp reports whether the given style="..." string already
+// declares the named property. Lookup is case-insensitive on the property
+// name; whitespace around `:` and `;` is tolerated.
+func hasInlineStyleProp(style, prop string) bool {
+	prop = strings.ToLower(strings.TrimSpace(prop))
+	if prop == "" {
+		return false
+	}
+	for _, decl := range strings.Split(style, ";") {
+		decl = strings.TrimSpace(decl)
+		if decl == "" {
+			continue
+		}
+		colon := strings.IndexByte(decl, ':')
+		if colon < 0 {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(decl[:colon]))
+		if name == prop {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureInlineStyleProps appends each (prop, val) pair to the element's style
+// attribute *only if* the property is not already declared. Returns true if
+// any property was added (so callers can record an Applied finding).
+//
+// User-authored values take precedence — we never overwrite existing
+// declarations even if they differ from our default, because the user may
+// have an intentional reason (e.g. wider list-margin for an outline-style
+// document).
+func ensureInlineStyleProps(n *xhtml.Node, propsInOrder [][2]string) bool {
+	styleIdx := -1
+	existing := ""
+	for i, attr := range n.Attr {
+		if strings.ToLower(attr.Key) == "style" {
+			styleIdx = i
+			existing = attr.Val
+			break
+		}
+	}
+	additions := make([]string, 0, len(propsInOrder))
+	for _, kv := range propsInOrder {
+		if !hasInlineStyleProp(existing, kv[0]) {
+			additions = append(additions, kv[0]+":"+kv[1])
+		}
+	}
+	if len(additions) == 0 {
+		return false
+	}
+	merged := strings.Join(additions, ";")
+	if existing != "" {
+		merged = strings.TrimRight(existing, "; ") + ";" + merged
+	}
+	if styleIdx >= 0 {
+		n.Attr[styleIdx].Val = merged
+	} else {
+		n.Attr = append(n.Attr, xhtml.Attribute{Key: "style", Val: merged})
+	}
+	return true
+}
+
+// stripWhitespaceTextChildren removes direct text-node children of n that
+// contain only whitespace (newlines, indentation). On <ol> / <ul> these
+// inter-<li> whitespace nodes are rendered by Feishu mail-editor as
+// extra inline text — visible as a blank line between list items even
+// when every <li> has 0 margin and the full Feishu-native marker set.
+// AI-authored HTML almost always contains pretty-printed indentation
+// inside lists, so this strip is essential to get gap-free rendering.
+func stripWhitespaceTextChildren(n *xhtml.Node) bool {
+	changed := false
+	for child := n.FirstChild; child != nil; {
+		next := child.NextSibling
+		if child.Type == xhtml.TextNode && strings.TrimSpace(child.Data) == "" {
+			n.RemoveChild(child)
+			changed = true
+		}
+		child = next
+	}
+	return changed
+}
+
+// wrapTextChildrenInFeishuSpans wraps each direct text-node child of n in
+// the canonical Feishu mail-editor inline shape:
+//
+//	<span style="font-family:inherit"><span style="color:rgb(0,0,0)">text</span></span>
+//
+// This is what every text leaf produced by the Feishu mail-editor itself
+// looks like (Quill-like editor model — every text leaf carries default
+// font / color override spans). Without these wrapper spans the renderer
+// falls back to its "untracked text" path, which inserts default-line
+// spacing between siblings — visually a blank line between list items.
+//
+// Whitespace-only text nodes are left untouched so we don't bloat the DOM
+// with wrapper spans around indentation / line breaks. Only direct text
+// children are wrapped; nested element subtrees (e.g. <b>text</b>) are
+// left alone (the user has already structured them; deeper traversal here
+// risks breaking intentional nesting).
+func wrapTextChildrenInFeishuSpans(n *xhtml.Node) bool {
+	changed := false
+	for child := n.FirstChild; child != nil; {
+		next := child.NextSibling
+		if child.Type == xhtml.TextNode && strings.TrimSpace(child.Data) != "" {
+			text := child.Data
+			outer := &xhtml.Node{
+				Type:     xhtml.ElementNode,
+				Data:     "span",
+				DataAtom: atom.Span,
+				Attr:     []xhtml.Attribute{{Key: "style", Val: "font-family:inherit"}},
+			}
+			inner := &xhtml.Node{
+				Type:     xhtml.ElementNode,
+				Data:     "span",
+				DataAtom: atom.Span,
+				Attr:     []xhtml.Attribute{{Key: "style", Val: "color:rgb(0,0,0)"}},
+			}
+			inner.AppendChild(&xhtml.Node{Type: xhtml.TextNode, Data: text})
+			outer.AppendChild(inner)
+			n.RemoveChild(child)
+			if next != nil {
+				n.InsertBefore(outer, next)
+			} else {
+				n.AppendChild(outer)
+			}
+			changed = true
+		}
+		child = next
+	}
+	return changed
+}
+
+// reorderAttrs reorders n.Attr so attributes named in `order` come first
+// (in that exact sequence); remaining attributes are appended after in
+// their original relative order. Lookup is case-insensitive on names.
+//
+// Feishu mail-editor's renderer is observed to walk attributes in
+// declaration order on certain hot paths (notably native list-block /
+// paragraph detection); inline-style declaration order matters for the
+// same reason. Matching the sequence emitted by Feishu mail-editor
+// itself is what flips the renderer onto the native, gap-free path.
+func reorderAttrs(n *xhtml.Node, order []string) {
+	if len(n.Attr) == 0 {
+		return
+	}
+	priority := make(map[string]int, len(order))
+	for i, k := range order {
+		priority[strings.ToLower(k)] = i + 1
+	}
+	sorted := make([]xhtml.Attribute, 0, len(n.Attr))
+	used := make([]bool, len(n.Attr))
+	// Pass 1: insert attrs whose name is in `order`, in `order` sequence.
+	for _, k := range order {
+		lk := strings.ToLower(k)
+		for i, attr := range n.Attr {
+			if used[i] {
+				continue
+			}
+			if strings.ToLower(attr.Key) == lk {
+				sorted = append(sorted, attr)
+				used[i] = true
+				break
+			}
+		}
+	}
+	// Pass 2: append remaining attrs (not in `order`) in original order.
+	for i, attr := range n.Attr {
+		if !used[i] {
+			sorted = append(sorted, attr)
+		}
+	}
+	n.Attr = sorted
+}
+
+// ensureAttr sets the given attribute to val if absent, leaving an
+// existing attribute (even with a different value) untouched. Returns true
+// if the attribute was newly added.
+func ensureAttr(n *xhtml.Node, key, val string) bool {
+	for _, attr := range n.Attr {
+		if strings.ToLower(attr.Key) == strings.ToLower(key) {
+			return false
+		}
+	}
+	n.Attr = append(n.Attr, xhtml.Attribute{Key: key, Val: val})
+	return true
+}
+
+// ensureClass appends the given class name to the element's class attribute
+// (creating the attribute if absent). Whitespace-separated tokens are
+// preserved. Returns true if the class was newly added.
+func ensureClass(n *xhtml.Node, cls string) bool {
+	classIdx := -1
+	existing := ""
+	for i, attr := range n.Attr {
+		if strings.ToLower(attr.Key) == "class" {
+			classIdx = i
+			existing = attr.Val
+			break
+		}
+	}
+	for _, c := range strings.Fields(existing) {
+		if c == cls {
+			return false
+		}
+	}
+	if existing == "" {
+		if classIdx >= 0 {
+			n.Attr[classIdx].Val = cls
+		} else {
+			n.Attr = append(n.Attr, xhtml.Attribute{Key: "class", Val: cls})
+		}
+	} else {
+		n.Attr[classIdx].Val = existing + " " + cls
+	}
+	return true
+}
+
+// ensureFeishuListStyle adds Feishu-native inline styles + the data-list-*
+// marker that the Feishu mail-editor renderer keys off to recognise the
+// list as a native list-block (vs. a fallback ad-hoc list with default
+// browser styling and the visual "blank line between items" issue).
+//
+// For <ol>, also seeds `start="1"` (when absent) and a deterministic
+// `data-ol-id` derived from the node pointer; both are required by Feishu
+// mail-editor to treat the ol as a tracked numbered list. Same id is read
+// by ensureFeishuListItemStyle when stamping each <li> with `data-ol-id`.
+func ensureFeishuListStyle(n *xhtml.Node, rep *Report) {
+	styleChanged := ensureInlineStyleProps(n, [][2]string{
+		{"margin-top", "0px"},
+		{"margin-bottom", "0px"},
+		{"margin-left", "0px"},
+		{"padding-left", "0px"},
+		{"list-style-position", "inside"},
+	})
+	tag := strings.ToLower(n.Data)
+	dataAttr := "data-list-bullet"
+	if tag == "ol" {
+		dataAttr = "data-list-number"
+	}
+	markerChanged := ensureAttr(n, dataAttr, "true")
+	if tag == "ol" {
+		if ensureAttr(n, "start", "1") {
+			markerChanged = true
+		}
+		// data-ol-id is intentionally NOT set on the <ol> itself —
+		// Feishu mail-editor's own output puts data-ol-id only on <li>
+		// children. Putting it on <ol> too triggers a different
+		// renderer code path that reintroduces inter-item spacing.
+	}
+	// Force the canonical attribute order Feishu mail-editor emits.
+	// Order matters for the renderer's native-list-block fast path.
+	if tag == "ol" {
+		reorderAttrs(n, []string{"start", "style", "data-list-number"})
+	} else {
+		reorderAttrs(n, []string{"style", "data-list-bullet"})
+	}
+	// Strip inter-<li> whitespace text nodes (newlines / indentation
+	// from pretty-printed source HTML). Feishu mail-editor renders
+	// these as visible blank lines between list items.
+	if stripWhitespaceTextChildren(n) {
+		markerChanged = true
+	}
+	if styleChanged || markerChanged {
+		rep.Applied = append(rep.Applied, Finding{
+			RuleID:    RuleStyleListNative,
+			Severity:  SeverityWarning,
+			TagOrAttr: n.Data,
+			Excerpt:   excerptOf(n),
+			Hint:      "已补飞书原生 inline style + data-list-* marker + 规范 attribute 顺序（让 Feishu mail-editor 识别为 native list-block，避免 fallback 渲染产生的空行）",
+		})
+	}
+}
+
+// nodeShortID generates an 8-char deterministic id from the node's pointer
+// address. Stable for the lifetime of a single Run() call so siblings in
+// the same <ol> get the same id when they read it via parent.Attr; varies
+// between runs because Go's allocator picks fresh addresses, which is
+// fine — `data-ol-id` is per-ol scoped, not per-document.
+func nodeShortID(n *xhtml.Node) string {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "%p", n)
+	return fmt.Sprintf("%08x", h.Sum32())
+}
+
+// readAttr returns the value of the named attribute (case-insensitive) or
+// "" if absent.
+func readAttr(n *xhtml.Node, key string) string {
+	key = strings.ToLower(key)
+	for _, attr := range n.Attr {
+		if strings.ToLower(attr.Key) == key {
+			return attr.Val
+		}
+	}
+	return ""
+}
+
+// ensureFeishuListItemStyle adds Feishu-native inline styles + class +
+// data-* marker to <li>. The list-style-type defaults to decimal/disc
+// based on the parent <ol>/<ul> kind; class follows Feishu mail-editor
+// internal naming (`temp-li number1` for ol-children, `temp-li bullet1`
+// for ul-children). data-li-line / data-list mark the node as part of a
+// native list-block so the mail-editor renderer doesn't fall back to
+// default browser list styling (which has the "blank line between
+// items" visual).
+func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report) {
+	listType := "disc"
+	listKind := "bullet1"
+	if parent != nil && strings.ToLower(parent.Data) == "ol" {
+		listType = "decimal"
+		listKind = "number1"
+	}
+	// CSS declaration order matches Feishu mail-editor's own output
+	// exactly — the renderer's list-item fast-path is observed to
+	// require this ordering, in addition to the marker set, for the
+	// gap-free native list-block render.
+	styleChanged := ensureInlineStyleProps(n, [][2]string{
+		{"line-height", "1.6"},
+		{"margin-top", "0px"},
+		{"margin-bottom", "0px"},
+		{"padding-left", "0px"},
+		{"display", "list-item"},
+		{"list-style-type", listType},
+		{"font-family", "inherit"},
+		{"font-size", "14px"},
+		{"margin-left", "0px"},
+		{"list-style-position", "inside"},
+	})
+	classChanged := false
+	if ensureClass(n, "temp-li") {
+		classChanged = true
+	}
+	if ensureClass(n, listKind) {
+		classChanged = true
+	}
+	markerChanged := false
+	if ensureAttr(n, "data-li-line", "true") {
+		markerChanged = true
+	}
+	if ensureAttr(n, "data-list", listKind) {
+		markerChanged = true
+	}
+	if ensureAttr(n, "dir", "auto") {
+		markerChanged = true
+	}
+	// For ol-children, derive data-ol-id from parent <ol>'s pointer
+	// (so all siblings under the same <ol> get the same id, but the
+	// <ol> itself stays clean — see ensureFeishuListStyle for why).
+	// data-start is the 1-based position among <li> siblings; it's
+	// what Feishu mail-editor uses to render the visible number prefix.
+	if parent != nil && strings.ToLower(parent.Data) == "ol" {
+		if ensureAttr(n, "data-ol-id", nodeShortID(parent)) {
+			markerChanged = true
+		}
+		pos := 1
+		for c := parent.FirstChild; c != nil && c != n; c = c.NextSibling {
+			if c.Type == xhtml.ElementNode && strings.ToLower(c.Data) == "li" {
+				pos++
+			}
+		}
+		if ensureAttr(n, "data-start", fmt.Sprintf("%d", pos)) {
+			markerChanged = true
+		}
+	}
+	contentChanged := wrapTextChildrenInFeishuSpans(n)
+	// Canonical li attribute order from Feishu mail-editor output:
+	// class, data-li-line, data-list, data-ol-id, data-start, style, dir
+	reorderAttrs(n, []string{"class", "data-li-line", "data-list", "data-ol-id", "data-start", "style", "dir"})
+	if styleChanged || classChanged || markerChanged || contentChanged {
+		rep.Applied = append(rep.Applied, Finding{
+			RuleID:    RuleStyleListItemNative,
+			Severity:  SeverityWarning,
+			TagOrAttr: "li",
+			Excerpt:   excerptOf(n),
+			Hint:      "已补飞书原生 inline style + class（temp-li " + listKind + "）+ data marker + 文字双层 span 包裹 + 规范 attribute 顺序",
+		})
+	}
+}
+
+// ensureFeishuBlockquoteStyle adds Feishu-native inline styles to
+// <blockquote>: the iconic 2px left bar in subtle grey + grey body text.
+func ensureFeishuBlockquoteStyle(n *xhtml.Node, rep *Report) {
+	if ensureInlineStyleProps(n, [][2]string{
+		{"padding-left", "0px"},
+		{"color", "rgb(100,106,115)"},
+		{"border-left", "2px solid rgb(187,191,196)"},
+		{"margin", "0px"},
+	}) {
+		rep.Applied = append(rep.Applied, Finding{
+			RuleID:    RuleStyleBlockquoteNative,
+			Severity:  SeverityWarning,
+			TagOrAttr: "blockquote",
+			Excerpt:   excerptOf(n),
+			Hint:      "已补飞书原生 inline style（左侧 2px 灰色边 + 灰色文字）",
+		})
+	}
+}
+
+// ensureFeishuLinkStyle adds Feishu-native class + inline styles to <a>:
+// `class="not-doclink"` is the marker the Feishu mail renderer keys off to
+// avoid treating the link as an internal doc-share, and the inline style
+// matches the editor's own colour and decoration.
+func ensureFeishuLinkStyle(n *xhtml.Node, rep *Report) {
+	classChanged := ensureClass(n, "not-doclink")
+	styleChanged := ensureInlineStyleProps(n, [][2]string{
+		{"cursor", "pointer"},
+		{"text-decoration", "none"},
+		{"color", "rgb(20,86,240)"},
+	})
+	if classChanged || styleChanged {
+		rep.Applied = append(rep.Applied, Finding{
+			RuleID:    RuleStyleLinkNative,
+			Severity:  SeverityWarning,
+			TagOrAttr: "a",
+			Excerpt:   excerptOf(n),
+			Hint:      "已补飞书原生 link 样式（class=not-doclink + 飞书蓝 + 无下划线）",
+		})
+	}
+}
+
+// rewritePToFeishuDiv changes <p>...</p> in place to
+//
+//	<div style="margin-top:4px;margin-bottom:4px;line-height:1.6">
+//	  <div dir="auto" style="font-size:14px">...children...</div>
+//	</div>
+//
+// User-supplied attributes on the original <p> are preserved on the outer
+// div; the inner div is created fresh. If the <p> already declares any of
+// margin-top / margin-bottom / line-height the user value wins.
+//
+// This is the only Feishu-native pass that mutates the tree shape (vs. just
+// adding inline styles). Children are re-parented to the inner div so all
+// their existing styles / classes survive untouched.
+func rewritePToFeishuDiv(n *xhtml.Node, rep *Report) {
+	// Detach existing children (kept in order).
+	var children []*xhtml.Node
+	for c := n.FirstChild; c != nil; {
+		nx := c.NextSibling
+		n.RemoveChild(c)
+		children = append(children, c)
+		c = nx
+	}
+
+	// Mutate <p> → <div>.
+	n.Data = "div"
+	n.DataAtom = atom.Div
+
+	// Add outer wrapper inline styles (only fills missing properties).
+	ensureInlineStyleProps(n, [][2]string{
+		{"margin-top", "4px"},
+		{"margin-bottom", "4px"},
+		{"line-height", "1.6"},
+	})
+
+	// Build inner <div dir="auto" style="font-size:14px">.
+	inner := &xhtml.Node{
+		Type:     xhtml.ElementNode,
+		Data:     "div",
+		DataAtom: atom.Div,
+		Attr: []xhtml.Attribute{
+			{Key: "dir", Val: "auto"},
+			{Key: "style", Val: "font-size:14px"},
+		},
+	}
+	for _, c := range children {
+		inner.AppendChild(c)
+	}
+	n.AppendChild(inner)
+
+	rep.Applied = append(rep.Applied, Finding{
+		RuleID:    RuleStyleParaWrapper,
+		Severity:  SeverityWarning,
+		TagOrAttr: "p",
+		Excerpt:   excerptOf(n),
+		Hint:      "已重写为飞书原生 div 双层段落容器（外层 margin/line-height + 内层 dir/font-size）",
+	})
 }

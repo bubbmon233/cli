@@ -38,14 +38,27 @@ func TestRun_AllowedTagsPassThrough(t *testing.T) {
 			`<div class="adit-html-block adit-html-block--collapsed"><div>x</div></div>`},
 	}
 
+	// Feishu-native autofix rules apply to <p>/<ul>/<ol>/<li>/<blockquote>/<a>
+	// — those are not "violations" so must not be flagged as errors. We
+	// allow STYLE_*_NATIVE_INLINE_APPLIED + STYLE_PARA_WRAPPER_REWRITTEN
+	// findings here but reject any other rule.
+	feishuNativeRules := map[string]bool{
+		RuleStyleListNative:       true,
+		RuleStyleListItemNative:   true,
+		RuleStyleBlockquoteNative: true,
+		RuleStyleLinkNative:       true,
+		RuleStyleParaWrapper:      true,
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rep := Run(tc.html, Options{AutoFix: true})
 			if len(rep.Blocked) != 0 {
 				t.Errorf("expected no errors, got %d: %+v", len(rep.Blocked), rep.Blocked)
 			}
-			if len(rep.Applied) != 0 {
-				t.Errorf("expected no warnings, got %d: %+v", len(rep.Applied), rep.Applied)
+			for _, f := range rep.Applied {
+				if !feishuNativeRules[f.RuleID] {
+					t.Errorf("unexpected non-Feishu-native warning: %+v", f)
+				}
 			}
 		})
 	}
@@ -95,9 +108,11 @@ func TestRun_AllowedStylePropertiesPassThrough(t *testing.T) {
 // TestRun_FontTagAutofixedToSpan verifies <font color="..."> rewrites to
 // <span style="color:..."> with AutoFix=true.
 func TestRun_FontTagAutofixedToSpan(t *testing.T) {
-	rep := Run(`<p><font color="red">x</font></p>`, Options{AutoFix: true})
+	// Use <div> wrapper to avoid the Feishu-native paragraph autofix
+	// firing alongside the <font> rewrite.
+	rep := Run(`<div><font color="red">x</font></div>`, Options{AutoFix: true})
 	if len(rep.Applied) != 1 {
-		t.Fatalf("expected 1 warning, got %d", len(rep.Applied))
+		t.Fatalf("expected 1 warning, got %d: %+v", len(rep.Applied), rep.Applied)
 	}
 	got := rep.Applied[0]
 	if got.RuleID != RuleTagFontToSpan {
@@ -209,7 +224,6 @@ func TestRun_BlockedTagsRemoved(t *testing.T) {
 		`<object data="x"></object>`:              RuleTagObjectBlocked,
 		`<embed src="x">`:                         RuleTagEmbedBlocked,
 		`<form action="x"><input></form>`:         RuleTagFormBlocked,
-		`<style>p{color:red}</style>`:             RuleTagStyleBlocked,
 		`<link rel="stylesheet" href="x.css">`:    RuleTagLinkBlocked,
 		`<meta http-equiv="refresh" content="0">`: RuleTagMetaBlocked,
 		`<base href="https://evil.com">`:          RuleTagBaseBlocked,
@@ -366,7 +380,10 @@ func TestRun_StyleBorderPrefixAllowed(t *testing.T) {
 // slices when nothing is found (the JSON envelope contract requires `[]`,
 // not `null`).
 func TestRun_EmptyArraysAlwaysPresent(t *testing.T) {
-	rep := Run(`<p>nothing here</p>`, Options{AutoFix: true})
+	// Use <div> instead of <p> to avoid the Feishu-native paragraph
+	// rewrite autofix, which would surface a finding even on otherwise
+	// clean input.
+	rep := Run(`<div>nothing here</div>`, Options{AutoFix: true})
 	if rep.Applied == nil || rep.Blocked == nil {
 		t.Errorf("Applied/Blocked must be non-nil; got applied=%v blocked=%v", rep.Applied, rep.Blocked)
 	}
@@ -395,10 +412,12 @@ func TestEmptyReport_HasContractFields(t *testing.T) {
 func TestRun_CleanedHTMLPreservesStructure(t *testing.T) {
 	html := `<div style="line-height:1.6"><h3>title</h3><p>body <b>bold</b> end</p><ul><li>a</li><li>b</li></ul></div>`
 	rep := Run(html, Options{AutoFix: true})
-	if len(rep.Blocked) != 0 || len(rep.Applied) != 0 {
-		t.Fatalf("unexpected findings: %+v %+v", rep.Blocked, rep.Applied)
+	if len(rep.Blocked) != 0 {
+		t.Fatalf("unexpected blocked: %+v", rep.Blocked)
 	}
-	for _, want := range []string{"line-height:1.6", "<h3>", "title", "<b>", "bold", "<ul>", "<li>", "</ul>"} {
+	// Feishu-native autofix expected to fire on <p>, <ul>, <li> — content
+	// must still survive untouched even though structure is augmented.
+	for _, want := range []string{"line-height:1.6", "<h3>", "title", "<b>", "bold", "<ul", "<li", "</ul>"} {
 		if !strings.Contains(rep.CleanedHTML, want) {
 			t.Errorf("expected %q in cleaned, got %q", want, rep.CleanedHTML)
 		}
@@ -649,7 +668,9 @@ func TestRun_StyleMalformedDeclarationDropped(t *testing.T) {
 // TestRun_StyleAllPropertiesDroppedRemovesAttribute verifies the style
 // attribute is removed entirely when every property is invalid.
 func TestRun_StyleAllPropertiesDroppedRemovesAttribute(t *testing.T) {
-	rep := Run(`<p style="position:absolute; z-index:99">x</p>`, Options{AutoFix: true})
+	// Use <div> to avoid the Feishu-native paragraph autofix, which adds
+	// a fresh style attribute on the rewritten outer wrapper.
+	rep := Run(`<div style="position:absolute; z-index:99">x</div>`, Options{AutoFix: true})
 	if strings.Contains(rep.CleanedHTML, "style=") {
 		t.Errorf("style attribute should be removed when all props invalid, cleaned=%q", rep.CleanedHTML)
 	}
@@ -675,7 +696,8 @@ func TestRun_StyleAttrAutoFixFalseKeepsOriginal(t *testing.T) {
 
 // TestRun_StyleEmptyValuePassThrough verifies an empty style attr passes.
 func TestRun_StyleEmptyValuePassThrough(t *testing.T) {
-	rep := Run(`<p style="">x</p>`, Options{AutoFix: true})
+	// Use <div> to avoid the Feishu-native paragraph autofix.
+	rep := Run(`<div style="">x</div>`, Options{AutoFix: true})
 	if len(rep.Applied) != 0 {
 		t.Errorf("empty style attr should not produce findings, got %+v", rep.Applied)
 	}
@@ -685,7 +707,7 @@ func TestRun_StyleEmptyValuePassThrough(t *testing.T) {
 // non-empty hint (consumer contract).
 func TestRun_HintsForAllBlockedTags(t *testing.T) {
 	cases := []string{
-		`<script>x</script>`, `<style>p{color:red}</style>`, `<iframe src="x"></iframe>`,
+		`<script>x</script>`, `<iframe src="x"></iframe>`,
 		`<object data="x"></object>`, `<embed src="x">`, `<form><input></form>`,
 		`<select></select>`, `<button>x</button>`, `<link href="x">`,
 		`<meta name="x">`, `<base href="x">`,
