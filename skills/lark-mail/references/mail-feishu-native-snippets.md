@@ -54,6 +54,48 @@
 
 > **关键 marker**：`<ul>` 必带 `data-list-bullet="true"`；每个 `<li>` 必带 `class="temp-li bullet1"` + `data-li-line="true"` + `data-list="bullet1"` + `dir="auto"`（**ul 内 li 不需要 data-ol-id 和 data-start**，那是 ol 专用）。其他规则同 ol。
 
+## 缩进 / 列表嵌套
+
+飞书 mail-editor 的"缩进"通过**列表嵌套 + `margin-left:24px`** 实现，不要用 `<p style="padding-left:..">` 或 `&nbsp;` 模拟。lcpr 写信路径下两种等价 pattern 任选其一：
+
+**Pattern A（推荐 / 简洁）：`<div style="padding-left:24px">` 包裹单层 ul/ol**
+
+```html
+<div style="margin-top:4px;margin-bottom:4px;line-height:1.6"><div dir="auto" style="font-size:14px"><b>1. 父级标题（普通 div，不是 list）</b></div></div>
+<div style="padding-left:24px"><ul style="margin-top:0px;margin-bottom:4px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin-top:2px;margin-bottom:2px;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">子项一</span></span></li><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin-top:2px;margin-bottom:2px;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">子项二</span></span></li></ul></div>
+```
+
+多级缩进就嵌套多个 div：`<div padding-left:24px><div padding-left:24px>...</div></div>` = 48px 缩进。
+
+**Pattern B（mail-editor 原生）：嵌套 ul/ol + 内层 `margin:0 0 0 24px` shorthand**
+
+```html
+<ul style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><ul style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin-top:0px;margin-bottom:0px;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">缩进的子项一</span></span></li><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin-top:0px;margin-bottom:0px;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">缩进的子项二</span></span></li></ul></ul>
+```
+
+> 内层用 `margin:0 0 0 24px` 必须是 **shorthand**（4 值短写法）。lint 的 `hasInlineStyleProp` 会识别 shorthand 已声明 margin-left，不再追加 `margin-left:0` 覆盖你的 24px。如果误写成长写法 `margin-left:24px;margin-top:0;...`，lint 也能识别保留。
+
+**Pattern C：ol(1) → 嵌入 ul circle → ol(2) 接续编号**
+
+```html
+<ol start="1" style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-number="true"><li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="ol-id-here" data-start="1" style="line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">第一项</span></span></li></ol><ul style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><ul style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" data-ol-id="ol-id-here" style="line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">第一项的子项</span></span></li></ul></ul><ol start="2" style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-number="true"><li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="ol-id-here" data-start="2" style="line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">第二项</span></span></li></ol>
+```
+
+> 显式写 `start="2"` + `data-start="2"` + 共享 `data-ol-id`；lint 的 `ensureAttr` 不覆盖已存在的属性，所以这套接续语义保留。`<ol>` 的 start 属性写在 attribute 而不是 style 里，更不受 ensureFeishuListStyle 影响。
+
+**Pattern D：ol decimal → 嵌入 ol lower-alpha（数字 1/2/3 → 字母 a/b/c）**
+
+```html
+<ol style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-number="true"><ol start="1" style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside" data-list-number="true"><li class="temp-li number2" data-li-line="true" data-list="number2" data-ol-id="ol-id-here" data-start="a" style="line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0px;display:list-item;list-style-type:lower-alpha;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">字母子项 a</span></span></li><li class="temp-li number2" data-li-line="true" data-list="number2" data-ol-id="ol-id-here" data-start="b" style="line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0px;display:list-item;list-style-type:lower-alpha;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">字母子项 b</span></span></li></ol></ol>
+```
+
+> **关键 marker（嵌套 / 缩进）**：
+> - **Pattern A** 的外层 div 用 `padding-left:24px`（lint 不动 div padding，最稳）；适合 div 编号 + 子项 list 的层级
+> - **Pattern B/C/D** 的内层 list 用 `margin:0 0 0 24px` shorthand；lint 修复后 shorthand 内的 margin-left:24px 不会被覆盖（`hasInlineStyleProp` 识别 shorthand）
+> - **子层 li class 必须降一级**：`bullet1` → `bullet2`，`number1` → `number2`；对应 list-style-type：`disc` → `circle`，`decimal` → `lower-alpha`
+> - **ol 编号接续**：同一 list 集合（哪怕被嵌套 ul 打断）共享 `data-ol-id`；ol 父项的 `data-start="N"` 和 `<ol start="N">` 跨嵌套继续递增；ul 子层若属于某个 ol 集合也带同一 `data-ol-id`
+> - **每层 li 之间不能有空白文本节点**（同顶层规则；lint autofix 会 strip 掉）
+
 ## 引用块（blockquote）
 
 ```html
