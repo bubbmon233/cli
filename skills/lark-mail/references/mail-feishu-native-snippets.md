@@ -110,13 +110,51 @@
 
 > **关键 marker**：`class="not-doclink"` 防止飞书把它误识为内部 doc share；`color:rgb(20,86,240)` 是飞书品牌蓝；`text-decoration:none` 去掉默认下划线；`rel` 三件套是 noopener noreferrer 安全属性。
 
-@用户 mention（药丸样式）：
+## @用户 mention（药丸 chip）
+
+飞书 mail-editor 客户端的 `isAtUserDOM` 判定**唯一硬标准是 a 标签 `id` 以 `at-user` 开头**——不要求标签类型，不需要 `data-user-id`。
+
+**统一写法**（只有邮箱与显示姓名两处需要填，其余全部 hardcoded）：
+
+```html
+<a id="at-user-N" href="mailto:user@bytedance.com" style="cursor:pointer;color:rgb(20,86,240);padding:2px;text-decoration:none;border-radius:999em;margin:0px 2px" rel="nofollow noopener noreferrer">@姓名</a>
+```
+
+> **填写规则**：
+> - **`mailto:user@bytedance.com`** —— 真实邮箱地址，唯一需要业务方填的链接目标
+> - **`@姓名`** —— 链接显示文本，按需替换为被 @ 的人名
+>
+> **以下字段全部 hardcoded，不要尝试替换**：
+> - **`id="at-user-N"`** —— N 用顺序编号（同文档内唯一即可，如 `at-user-1` / `at-user-2` / ...）。这是飞书客户端 `isAtUserDOM` 识别为 mention DOM 的唯一硬标准
+> - inline style 五件套 + `rel="nofollow noopener noreferrer"` —— 药丸 chip 视觉 + 安全属性，按字符照抄
+
+视觉退化（如果不加 `id="at-user-*"`，飞书客户端将其作为普通链接处理，仅 inline style 形成药丸装饰，不识别为 mention DOM）：
 
 ```html
 <a href="mailto:user@bytedance.com" style="color:rgb(20,86,240);padding:2px;text-decoration:none;border-radius:999em;margin:0px 2px">@姓名</a>
 ```
 
-> **关键 marker**：`border-radius:999em` 让链接显示成药丸形（飞书 mention chip 标准样式）；`padding:2px` 给 chip 加左右内边距；`margin:0 2px` 跟前后文字留间隙。
+> **OAPI 写信通知限制**：飞书 mail OAPI 写信路径**不触发** mention 通知到飞书 IM —— 即使 marker 全套齐，被 @ 的人靠**收到邮件本身**感知，不靠飞书 IM push。模板里 mention chip 的目的是让客户端识别 + 视觉一致，不是触发通知。
+
+## 文字高亮（荧光笔风格）
+
+嵌入文本流的彩色背景高亮，**不加 padding / border-radius**（区别于 badge / chip 标签风格），文字色统一用飞书原生黑 `rgb(31,35,41)`，**不加粗**。3 种颜色按语义场景选用：
+
+| 颜色 | 背景 RGB | 适用场景 |
+|------|----------|----------|
+| 粉色 | `rgb(255,200,220)` | 重要数据 / 关键里程碑 |
+| 黄色 | `rgb(255,225,140)` | 待关注 / 需跟进 / 阻塞状态 |
+| 浅绿 | `rgb(190,230,200)` | 已完成 / 关键成果 |
+
+写法（文字 fg 全部 `rgb(31,35,41)`）：
+
+```html
+<span style="background-color:rgb(255,200,220);color:rgb(31,35,41)">关键里程碑数据</span>
+<span style="background-color:rgb(255,225,140);color:rgb(31,35,41)">阻塞 / 待跟进事项</span>
+<span style="background-color:rgb(190,230,200);color:rgb(31,35,41)">已完成 / 关键成果</span>
+```
+
+> **使用原则**：高亮是替代加粗的强调手段（参见父项加粗一致性原则）。一封邮件里同种语义统一用同种颜色（如所有"阻塞"都用黄色），不要混用。粉色容易抢眼，留给最关键的 1-2 处数据。
 
 ## 文字强调
 
