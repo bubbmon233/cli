@@ -6,13 +6,16 @@
 
 完整命令用法见 [`+lint-html`](./lark-mail-lint-html.md)。
 
-## 三档处理一览
+## 四档处理一览
 
 | 档位 | 处理 | 覆盖范围 |
 |------|------|----------|
-| 通过 | 不报 warning | 通用块、原生强调、列表、表格、引用、链接、图片等 |
-| 警告 + 自动修复 | warning，`--auto-fix` 时降级；写信路径默认 autofix | `<font>` / `<center>` / `<marquee>` / `<blink>` |
-| 错误（删除） | error，`--strict` 非零退出；写信路径总是删 | `<script>` / `<style>` / `<iframe>` / `<form>` 等；`on*` 属性；`javascript:` URL |
+| 通过 | 不报 warning，原样保留 | 通用块、原生强调、表格、图片、`<style>` 块（飞书 mail 服务端渲染时加 selector scope 隔离）等 |
+| **飞书原生 autofix** | warning，写信路径默认补全 inline style + class + data-* marker | `<p>` → 飞书原生 div 双层嵌套；`<ul>/<ol>/<li>` → 飞书 native list-block 全套 marker；`<blockquote>` → 左侧 2px 灰边样式；`<a>` → `not-doclink` class + 飞书蓝色 |
+| 警告 + 自动修复 | warning，`--auto-fix` 时降级；写信路径默认 autofix | `<font>` / `<center>` / `<marquee>` / `<blink>` HTML4 过时标签现代化 |
+| 错误（删除） | error，`--strict` 非零退出；写信路径总是删 | `<script>` / `<iframe>` / `<form>` 等；`on*` 属性；`javascript:` URL |
+
+**飞书原生 autofix 行为详细说明见 [`lark-mail-feishu-native.md`](./lark-mail-feishu-native.md) 第二节"飞书原生写法铁律"**。AI 写最简陋的 HTML，lint 自动补全成飞书 mail-editor 真原生格式。
 
 ## 标签白名单
 
@@ -20,13 +23,14 @@
 
 | 写法 | 说明 |
 |------|------|
-| `<p>...</p>` | 段落，不要连续多个空 `<p>` 制造行距，请改用 `<p><br></p>` 一次 |
+| `<p>...</p>` | 段落，**lint autofix → 飞书原生双层 div 嵌套**：`<div style="margin:4px 0;line-height:1.6"><div dir="auto" style="font-size:14px">...</div></div>`。不需要手写 `<p><br></p>` 制造空行 |
 | `<div>...</div>` | 块容器，可设 `style="line-height:1.6"` 等内联样式 |
 | `<span>...</span>` | 行内容器，常用承载 `style="color:..."` / `font-size:...` |
 | `<br>` | 单行换行；`<br>` 之间不需要 `</br>` |
 | `<hr>` | 水平分割线 |
-| `<blockquote>...</blockquote>` | 用户引用块；reply / forward 自动生成的引用区由 CLI 处理，AI 不要重写 |
+| `<blockquote>...</blockquote>` | **lint autofix → 飞书原生引用块**：左侧 2px 灰边 + 灰文字。reply / forward 自动生成的引用区由 CLI 处理，AI 不要重写 |
 | `<pre>...</pre>` / `<code>...</code>` | 代码块（`<pre>`）/ 行内代码（`<code>`） |
+| `<style>` 块 | 透传（lint 不感知）；飞书 mail 服务端渲染时自动加 selector scope class 前缀做隔离 |
 
 ### 强调
 
@@ -52,10 +56,12 @@
 
 | 写法 | 说明 |
 |------|------|
-| `<ul><li>...</li></ul>` | 无序列表，可多级嵌套 |
-| `<ol><li>...</li></ol>` | 有序列表，可多级嵌套 |
+| `<ul><li>...</li></ul>` | 无序列表，**lint autofix → 飞书 native list-block**（加 `data-list-bullet="true"` + `class="temp-li bullet1"` + 全套 inline style + 内容双层 span 包裹）。可多级嵌套 |
+| `<ol><li>...</li></ol>` | 有序列表，**lint autofix → 飞书 native list-block**（加 `data-list-number="true"` + `start="1"` + `class="temp-li number1"` + `data-ol-id` + `data-start="N"` + 全套 inline style + 内容双层 span 包裹）。可多级嵌套 |
 
-**不要**用 `<p>一、...</p><p>二、...</p>` 这种「中文编号 + 段落」的列表样式——失去无序 / 有序列表的语义，且飞书原生编辑器渲染不一致。
+**不要**用 `<p>一、...</p><p>二、...</p>` 这种「中文编号 + 段落」的列表样式——飞书 mail-editor 不识别且会吞编号字符。
+
+**lint 还会删除 ol/ul 直接子节点中的纯空白文本节点**（多行格式 HTML 中 `<li>` 之间的换行/缩进会被飞书渲染为可见空行，lint 自动 strip 掉）。
 
 ### 表格
 
@@ -85,6 +91,8 @@
 
 **禁止**：`javascript:` / `vbscript:` / `file:` —— lint 直接删属性并报 error。
 
+**lint autofix 自动加飞书原生 link 样式**：`class="not-doclink"`（防止飞书把它误识为内部 doc share）+ `style="cursor:pointer;text-decoration:none;color:rgb(20,86,240)"`（飞书蓝、无下划线）。AI 直接写 `<a href>` 即可，lint 会补全。
+
 ### 内嵌图片
 
 ```html
@@ -97,7 +105,7 @@
 
 ## CSS inline style 白名单
 
-只能用 inline `style="..."` 属性表达样式；不允许 `<style>` 标签或外链 `<link rel="stylesheet">`。
+inline `style="..."` 属性会按 property 白名单做过滤；非白名单 property 静默删除并报 `STYLE_PROPERTY_DROPPED` 警告。`<style>` 标签透传（lint 不感知，飞书 mail 服务端按渲染场景处理；用 SMTP 直发或外部签发流程时 `<style>` 完整保留）；不允许外链 `<link rel="stylesheet">`。
 
 允许的 CSS property：
 
@@ -108,11 +116,12 @@
 | 排版 | `text-align` / `text-decoration` / `text-indent` / `text-transform` / `line-height` / `letter-spacing` / `vertical-align` |
 | 盒模型 | `padding` / `padding-*` / `margin` / `margin-*` / `width` / `height` / `min-width` / `max-width` / `min-height` / `max-height` / `display` / `box-sizing` |
 | 边框 | `border` / `border-*`（含 `border-top` / `border-radius` / `border-color` 等所有 `border-` 前缀） |
-| 列表 | `list-style` / `list-style-type` |
+| 列表 | `list-style` / `list-style-type` / `list-style-position` |
 | 文本流 | `white-space` / `word-break` / `word-wrap` / `overflow` / `overflow-wrap` / `hyphens` |
+| 动画 | `transition`（飞书 link 自带 `transition:color 0.3s` 需放行） |
 | 杂项 | `cursor` / `opacity` |
 
-**不在白名单的 property（如 `position` / `z-index` / `transform` / `animation` / `transition` / `filter`）会被删除并报 STYLE_PROPERTY_DROPPED warning。**
+**不在白名单的 property（如 `position` / `z-index` / `transform` / `animation` / `filter`）会被删除并报 STYLE_PROPERTY_DROPPED warning。**
 
 ## 标准写法示例
 

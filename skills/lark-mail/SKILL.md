@@ -295,11 +295,16 @@ lark-cli mail +send --to alice@example.com --subject '周报' \
 lark-cli mail +reply --message-id <id> --body '收到，谢谢'
 ```
 
-**HTML 写法、风格指引、场景模板请参考三份配套文档：**
+**HTML 写法、风格指引、模板请参考配套文档与内置模板库：**
 
+- [飞书原生写法与文风指引](references/lark-mail-feishu-native.md) — 文风底线 + 飞书原生 7 条铁律（lint autofix 行为）+ 元素速查（含 autofix 后的实际输出格式）
+- [飞书原生写法片段](references/mail-feishu-native-snippets.md) — 段落 / 列表 / 引用 / 链接 / 强调 / 表格 / 大标题等可直接复制的飞书 mail-editor 真原生 HTML 片段
 - [HTML 兼容白名单](references/lark-mail-html-allowlist.md) — 标签 / class / inline style 速查；表格 / 列表 / 字号 / 引用 / 链接 / 内嵌图片标准写法
-- [飞书原生写法（含风格指引与 3 套完整模板）](references/lark-mail-feishu-native.md) — 通知 / 周报 / 决策请求三套漂亮模板（含问候开场 + 骨架 + 落款）
 - [`+lint-html` 用法](references/lark-mail-lint-html.md) — 创建草稿前自检 / 修复 AI 输出 / CI 校验静态 HTML 模板
+- **模板库** [`assets/templates/`](assets/templates/) + [`mail-template-catalog.md`](references/mail-template-catalog.md) + [`mail-template-index.json`](references/mail-template-index.json) — 8 套场景模板（notify / weekly / decision / incident / kickoff / welcome / newsletter），按飞书原生格式预制
+- **模板检索脚本** [`mail_template_tool.py`](scripts/mail_template_tool.py) — `search` / `summarize` / `extract` 三个命令，按场景 / 正式度 / 密度做 N-gram 检索
+
+> **核心思想（写信内容的最小负担路径）**：AI 写最简陋的 HTML（`<p>段落</p>` / `<ul><li>项</li></ul>` / `<ol><li>条</li></ol>` / `<blockquote>引用</blockquote>` / `<a href>链接</a>`），写信路径 lint **自动 autofix 成飞书 mail-editor 真原生格式**（双层 div 段落容器、ul/ol 加 data-list-* marker、li 加 class + data marker + 内容双层 span 包裹、blockquote 左侧灰边、a 加 not-doclink class + 飞书蓝色）。AI 不需要手抄复杂的 inline style + class + data 属性。需要现成模板时，用 `mail_template_tool.py search` 检索 [`assets/templates/`](assets/templates/) 里的预制模板。
 
 ### 邮件风格规范
 
@@ -322,9 +327,13 @@ lark-cli mail +reply --message-id <id> --body '收到，谢谢'
 
 `+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op 在调用 `emlbuilder` **之前**会强制对 HTML 正文做 lint：
 
-- 错误（`<script>` / `on*` / `javascript:` URL / `<iframe>` / `<form>` / `<style>` / `<link>` 等）会被**直接删除**
-- 警告（`<font>` / `<center>` / `<marquee>`）会被**自动修复**为飞书原生写法
-- 不允许的 CSS property（`position` / `z-index` / `transform` 等）会从 inline `style` 里删除
+- **安全清理**：错误（`<script>` / `on*` / `javascript:` URL / `<iframe>` / `<form>` / `<link>` 等）会被**直接删除**；`<style>` 块**透传**（飞书 mail 服务端渲染时自动加 selector scope class 隔离）
+- **HTML4 现代化**：警告（`<font>` / `<center>` / `<marquee>` / `<blink>`）会被**自动修复**为 HTML5 等价写法（`<span style>` / `<div style>` / 纯文本）
+- **飞书原生 autofix（视觉规范化）**：`<p>` → 飞书原生双层 div 段落容器；`<ul>/<ol>/<li>` → 飞书 native list-block（含 `data-list-bullet/number` / `class="temp-li bullet1/number1"` / `data-li-line` / `data-list` / `data-ol-id` / `data-start` 全套 marker + 内容双层 span 包裹）；`<blockquote>` → 左侧 2px 灰边 + 灰文字；`<a>` → `class="not-doclink"` + 飞书蓝
+- **CSS property 白名单过滤**：不允许的 property（`position` / `z-index` / `transform` 等）会从 inline `style` 里删除
+- **空白节点净化**：`<ol>/<ul>` 直接子节点的纯空白文本节点（多行格式 HTML 中 `<li>` 之间的换行 / 缩进）会被删除（防飞书渲染为可见空行）
+
+→ AI 写最简陋的 HTML 即可，lint 会自动改写成飞书 mail-editor 真原生格式，渲染跟用 mail-editor 自己写的一致（无段间空行、列表无空行、引用块灰边、链接飞书蓝）。
 
 stdout 永远输出结构化 lint 报告（`lint_applied[]` / `original_blocked[]`），即使无改动也是空数组。写入路径**没有 `--no-lint` 总开关**——这是本方案的安全契约。如果想预先看 HTML 是否会被改动，先用 [`+lint-html`](references/lark-mail-lint-html.md) 跑一次。
 
@@ -342,9 +351,50 @@ lark-cli mail +message --message-id <id> --html=false
 lark-cli mail +message --message-id <id>
 ```
 
+### 仓库内置 HTML 模板库（[`assets/templates/`](assets/templates/)）
+
+跟个人邮件模板（飞书 OAPI 的 `mail.user_mailbox.templates`）不同，**`skills/lark-mail/assets/templates/` 是仓库内预制的 HTML 文件**，按飞书原生格式（lint autofix 后的输出）写好，AI 直接 cat 给写信路径 `--body` 就能用。
+
+**8 套 MVP 场景**（按 `scene--subscene.html` 命名）：
+
+| scene | 文件 | 说明 |
+|-------|------|------|
+| notify | `notify--system-upgrade.html` / `notify--policy-change.html` | 系统升级 / 制度变更通告 |
+| weekly | `weekly--team-report.html` | 团队周报（含进展 / 计划 / 指标 / 风险）|
+| decision | `decision--proposal-review.html` | 方案 A/B/C 评审请求 |
+| incident | `incident--postmortem.html` | P0/P1 故障复盘（事件概要 / 时间线 / 根因 / Action Items）|
+| kickoff | `kickoff--project-launch.html` | 项目立项 / 启动 |
+| welcome | `welcome--new-hire.html` | 新人入职欢迎 |
+| newsletter | `newsletter--daily-brief.html` | 每日新闻速递 |
+
+**模板检索（避免读全文）**：
+
+```bash
+# search：按关键词 / 场景 / 正式度做 N-gram 检索
+python3 skills/lark-mail/scripts/mail_template_tool.py search --query "周报" --formality formal --limit 3
+
+# summarize：拿模板 metadata + section 列表
+python3 skills/lark-mail/scripts/mail_template_tool.py summarize --template weekly--team-report
+
+# extract：按 section label 抽取 HTML 片段
+python3 skills/lark-mail/scripts/mail_template_tool.py extract --template weekly--team-report --section "本周进展" --out /tmp/this-week.html
+```
+
+**直接套用（无脑 cat）**：
+
+```bash
+lark-cli mail +draft-create --as user \
+  --to alice@example.com --subject 'Q3 获客方案审批' \
+  --body "$(cat skills/lark-mail/assets/templates/decision--proposal-review.html)"
+```
+
+详细目录见 [`mail-template-catalog.md`](references/mail-template-catalog.md)；机器索引 [`mail-template-index.json`](references/mail-template-index.json)。
+
 ### 邮件模板（`+template-create` / `+template-update` / `--template-id`）
 
 模板的创建 / 更新由专用 shortcut 处理（自动做 Drive 上传 + `<img src>` 改写成 `cid:`）；发信类 shortcut 通过 `--template-id <id>` 套用模板。
+
+> **跟仓库 `assets/templates/` 的区别**：本节讲的是**飞书 OAPI 的个人邮件模板系统**（用户邮箱里的"我的模板"），可在飞书客户端管理；上面"仓库内置 HTML 模板库"是 lark-cli 仓库里预制的飞书原生 HTML 文件，AI 直接 cat 给 `--body` 即可用，不涉及飞书后端模板系统。两者互补：仓库模板适合一次性使用 / AI 套用；个人模板适合用户长期复用、跨客户端可见。
 
 **管理模板**：
 

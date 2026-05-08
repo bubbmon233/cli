@@ -16,7 +16,6 @@ const (
 	RuleTagMarqueeToText   = "TAG_MARQUEE_TO_TEXT"
 	RuleTagBlinkToText     = "TAG_BLINK_TO_TEXT"
 	RuleTagScriptBlocked   = "TAG_SCRIPT_BLOCKED"
-	RuleTagStyleBlocked    = "TAG_STYLE_BLOCKED"
 	RuleTagIframeBlocked   = "TAG_IFRAME_BLOCKED"
 	RuleTagObjectBlocked   = "TAG_OBJECT_BLOCKED"
 	RuleTagEmbedBlocked    = "TAG_EMBED_BLOCKED"
@@ -34,6 +33,19 @@ const (
 
 	// Style-level rules.
 	RuleStylePropertyDropped = "STYLE_PROPERTY_DROPPED"
+
+	// Feishu-native autofix rules. These autofix the inline style /
+	// class / nesting shape of common elements so AI-authored HTML
+	// matches what Feishu mail-editor itself emits, fixing the visual
+	// "extra blank line between blocks", "list bullets/numbers missing",
+	// "link color wrong" etc. classes of issues. The rewrite is purely
+	// additive — user-supplied inline styles take precedence; the lib
+	// only fills the missing properties.
+	RuleStyleListNative       = "STYLE_LIST_NATIVE_INLINE_APPLIED"
+	RuleStyleListItemNative   = "STYLE_LIST_ITEM_NATIVE_INLINE_APPLIED"
+	RuleStyleBlockquoteNative = "STYLE_BLOCKQUOTE_NATIVE_INLINE_APPLIED"
+	RuleStyleLinkNative       = "STYLE_LINK_NATIVE_INLINE_APPLIED"
+	RuleStyleParaWrapper      = "STYLE_PARA_WRAPPER_REWRITTEN"
 )
 
 // Tag classification ----------------------------------------------------------
@@ -101,7 +113,6 @@ var allowedTags = map[string]bool{
 // maps to the rule id surfaced in Finding.RuleID.
 var blockedTags = map[string]string{
 	"script": RuleTagScriptBlocked,
-	"style":  RuleTagStyleBlocked,
 	"iframe": RuleTagIframeBlocked,
 	"object": RuleTagObjectBlocked,
 	"embed":  RuleTagEmbedBlocked,
@@ -275,9 +286,11 @@ var allowedStyleProps = map[string]bool{
 	"overflow":        true,
 	"overflow-wrap":   true,
 	"vertical-align":  true,
-	"list-style":      true,
-	"list-style-type": true,
-	"font-family":     true,
+	"list-style":          true,
+	"list-style-type":     true,
+	"list-style-position": true,
+	"transition":          true,
+	"font-family":         true,
 	"text-transform":  true,
 	"hyphens":         true,
 	"max-width":       true,

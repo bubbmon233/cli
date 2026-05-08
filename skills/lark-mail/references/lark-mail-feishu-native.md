@@ -26,41 +26,64 @@
 - 中英混排时，英文 / 数字两侧加空格：`本周 PR 共 12 个`，不写成 `本周PR共12个`。
 - 不要用 `&nbsp;` 制造缩进；段落前缩进用 `<p style="text-indent:2em">...</p>`。
 
-## 二、原生格式速查
+## 二、飞书原生写法铁律（lint autofix 行为）
+
+写信路径的 lint 会自动把 AI 写的简单 HTML 改写成飞书 mail-editor 真原生格式 —— 你**直接写最简陋的 `<p>/<ul>/<ol>/<blockquote>/<a>` 即可**，lint autofix 会补全飞书 mail-editor 内部使用的 inline style + class + data-* marker，让收件方渲染跟飞书 mail-editor 自己写的一致（无段间空行、列表无空行、链接飞书蓝、引用块左侧灰边）。
+
+| 你写的 | lint autofix 后的飞书原生格式 | 关键 marker |
+|--------|------------------------------|------------|
+| `<p>文字</p>` | `<div style="margin-top:4px;margin-bottom:4px;line-height:1.6"><div dir="auto" style="font-size:14px">文字</div></div>` | 段落容器双层 div 嵌套，外层定 margin/line-height、内层定 font-size |
+| `<ul><li>项</li></ul>` | `<ul style="margin-top:0px;margin-bottom:0px;margin-left:0px;padding-left:0px;list-style-position:inside" data-list-bullet="true">` + `<li class="temp-li bullet1" data-li-line="true" data-list="bullet1" style="line-height:1.6;margin-top:0px;margin-bottom:0px;padding-left:0px;display:list-item;list-style-type:disc;font-family:inherit;font-size:14px;margin-left:0px;list-style-position:inside" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">项</span></span></li>` | ul 加 `data-list-bullet="true"`；li 加 `class="temp-li bullet1"` + 全套 data-* marker + 内容双层 span 包裹 |
+| `<ol><li>条</li></ol>` | 类似 ul 但 list-style-type:decimal、ol 加 `start="1"`、li 加 `class="temp-li number1"`、`data-list="number1"`、`data-ol-id="<id>"`、`data-start="N"` | 飞书 mail-editor 用 ol 内 `data-ol-id` (li 共享同一 id) + `data-start` (li 顺序号) 跟踪有序列表 |
+| `<blockquote>引用</blockquote>` | `<blockquote style="padding-left:0px;color:rgb(100,106,115);border-left:2px solid rgb(187,191,196);margin:0px">` | 飞书原生引用块：左侧 2px 灰边 + 灰文字 |
+| `<a href="...">链接</a>` | `<a class="not-doclink" href="..." style="cursor:pointer;text-decoration:none;color:rgb(20,86,240)">` | `not-doclink` class 防止飞书把它当内部 doc share；飞书蓝 `rgb(20,86,240)` |
+| `<font color size>` / `<center>` / `<marquee>` / `<blink>` | autofix → `<span style>` / `<div style="text-align:center">` / 纯文本 / 纯文本 | HTML4 过时标签现代化 |
+| 列表内多行格式（缩进/换行）| autofix 删除 ol/ul 直接子节点中的纯空白 text 节点 | 防 li 之间空白文本被渲染为可见空行 |
+
+**关键洞察 1**：飞书 mail-editor 用 class + data-* marker 识别"native list-block"。没这些 marker 的 ul/ol 走 fallback 渲染，li 之间会产生可见空行。
+
+**关键洞察 2**：飞书 mail-editor 不输出 `<p>` —— 段落都是 div 双层嵌套。直接写 `<p>` lint 会改成 div 嵌套；保留 `<p>` 视觉无差异但跟原生不一致。
+
+**关键洞察 3**：所有 inline 文字内容（li / 段落里的纯文字）会被包成 `<span style="font-family:inherit"><span style="color:rgb(0,0,0)">text</span></span>` 双层 span。这是飞书 mail-editor 的 Quill-like 数据模型对所有 text leaf 的默认装饰。
+
+可复制的飞书原生片段见 [`mail-feishu-native-snippets.md`](./mail-feishu-native-snippets.md)；模板见 [`assets/templates/`](../assets/templates/)。
+
+## 三、原生格式速查
 
 字号 / 颜色对齐 mail-editor editor-kit 分支：
 
-| 元素 | 飞书原生写法 | 关键点 |
-|------|--------------|--------|
-| 标题 | `<h1>` ~ `<h6>` | 字号映射 title 34px / h1 26px / h2 22px / h3 20px / h4 18px / h5 16px / h6 16px，自动加粗 |
-| 段落 | `<p>` 或 `<div>` | 不要连续多个空 `<p>` 制造行距；用 `<p><br></p>` 一次 |
-| 强调 | `<b>` / `<strong>` 加粗；`<i>` / `<em>` 斜体；`<u>` 下划线；`<s>` 删除线；`<sub>` / `<sup>` 上下标 | 全部支持；避免 `<font weight=...>` 等过时写法 |
-| 字号 | `<span style="font-size:14px">…</span>`；常用 12px / 14px / 16px / 18px / 24px | 写信默认 14px；PC 引用区 12px / mobile 引用区 14px；不走 `<font size>` |
-| 颜色 | `<span style="color:rgb(31,35,41)">…</span>` | 主色 `rgb(31,35,41)` 黑文 / `rgb(100,106,115)` 灰副 / `rgb(245,246,247)` 浅灰底 / 强调色 `rgb(225,77,42)` 橙红 |
-| 行间距 | `<div style="line-height:1.6">…</div>` | 写信默认 1.6 |
-| 分点（无序） | `<ul><li>…</li></ul>` | 多级嵌套；不要用 "一、二、三" 中文编号当列表 |
-| 分点（有序） | `<ol><li>…</li></ol>` | 同上多级嵌套 |
-| 引用 | `<blockquote>…</blockquote>` | 用户撰写引用用 `<blockquote>`；reply / forward 引用区由飞书自动生成 |
-| 链接 | `<a href="https://...">…</a>` / `<a href="mailto:...">` | 拒 `javascript:` / `vbscript:`；`cid:` / `data:image/*` 放行 |
-| 表格 | `<table><thead><tr><th>…</th></tr></thead><tbody><tr><td>…</td></tr></tbody></table>` | 单元格不嵌脚本 / 表单 |
-| 内嵌图片 | `<img src="./path/to/file" />` | 路径必须是 lark-cli cwd 子树（不接受绝对路径或 `..` 跨出 cwd）；CLI 自动注册为 inline part |
-| 水平分割 | `<hr>` | 飞书原生支持 |
-| 代码 | `<code>…</code>`（行内）/ `<pre>…</pre>`（块） | 等宽字体；不渲染 markdown |
-| 段间留白 | `<p><br></p>` | 不要叠 `margin-top` / `margin-bottom` |
+| 元素 | 你直接写 | lint 处理 | 关键点 |
+|------|----------|-----------|--------|
+| 标题 | `<h1>` ~ `<h6>` | 透传 | 字号映射 title 34px / h1 26px / h2 22px / h3 20px / h4 18px / h5 16px / h6 16px，自动加粗 |
+| 段落 | `<p>...</p>` | autofix → 飞书原生双层 div | 不需要手写 `<p><br></p>` 制造空行；段落之间 lint 自动处理 4px margin |
+| 强调 | `<b>` / `<strong>` 加粗；`<i>` / `<em>` 斜体；`<u>` 下划线；`<s>` 删除线；`<sub>` / `<sup>` 上下标 | 透传 | 全部支持；避免 `<font weight=...>` 等过时写法 |
+| 字号 | `<span style="font-size:14px">…</span>`；常用 12px / 14px / 16px / 18px / 24px | 透传 | 写信默认 14px；PC 引用区 12px / mobile 引用区 14px；不走 `<font size>` |
+| 颜色 | `<span style="color:rgb(31,35,41)">…</span>` | 透传 | 主色 `rgb(31,35,41)` 黑文 / `rgb(100,106,115)` 灰副 / `rgb(245,246,247)` 浅灰底 / 飞书蓝 `rgb(20,86,240)` |
+| 行间距 | `<div style="line-height:1.6">…</div>` | 透传 | 写信默认 1.6 |
+| 分点（无序）| `<ul><li>…</li></ul>` | autofix → 飞书原生 inline style + `data-list-bullet` + `class="temp-li bullet1"` + 内容双层 span | li 之间无空行；不要用 "一、二、三" 中文编号当列表 |
+| 分点（有序）| `<ol><li>…</li></ol>` | autofix → 飞书原生 inline style + `data-list-number` + `start="1"` + `class="temp-li number1"` + `data-ol-id` + `data-start="N"` + 内容双层 span | li 之间无空行；编号自动递增 |
+| 引用 | `<blockquote>…</blockquote>` | autofix → 飞书原生左侧 2px 灰边 + 灰文字 | 用户撰写引用用 `<blockquote>`；reply / forward 引用区由飞书自动生成 |
+| 链接 | `<a href="https://...">…</a>` / `<a href="mailto:...">` | autofix → `class="not-doclink"` + 飞书蓝 + 无下划线 | 拒 `javascript:` / `vbscript:`；`cid:` / `data:image/*` 放行 |
+| 表格 | `<table><thead><tr><th>…</th></tr></thead><tbody><tr><td>…</td></tr></tbody></table>` | 透传 | 单元格不嵌脚本 / 表单 |
+| 内嵌图片 | `<img src="./path/to/file" />` | 透传 | 路径必须是 lark-cli cwd 子树（不接受绝对路径或 `..` 跨出 cwd）；CLI 自动注册为 inline part |
+| 水平分割 | `<hr>` | 透传 | 飞书原生支持 |
+| 代码 | `<code>…</code>`（行内）/ `<pre>…</pre>`（块）| 透传 | 等宽字体；不渲染 markdown |
+| `<style>` 块 | 透传 | 飞书 mail-editor 服务端会自动加 selector scope 前缀（class 隔离），不污染整体页面 |
 
 ### 禁用 / 降级清单
 
 | 写法 | 处理 | 说明 |
 |------|------|------|
-| `<font>` | autofix → `<span style>` | color / face / size 转 inline style |
-| `<center>` | autofix → `<div style="text-align:center">` | 已过时 |
-| `<style>` 块 | 删除 | 飞书原生编辑器禁止 `<style>`；改用 inline `style="..."` |
+| `<font color size>` | autofix → `<span style="color:..;font-size:..">` | HTML4 过时标签，autofix 现代化 |
+| `<center>` | autofix → `<div style="text-align:center">` | 同上 |
+| `<marquee>` / `<blink>` | autofix → `<span>` 纯文本 | HTML5 已废，动画属性丢弃 |
+| `<style>` 块 | 透传（lint 不感知）| 飞书 mail 服务端自动加 selector scope 前缀，class 隔离不污染页面；用 SMTP 直发 / 接收侧渲染保留 |
 | `<link rel="stylesheet">` | 删除 | 不允许外链 CSS |
 | `<script>` / `<iframe>` / `<form>` / `<input>` | 整段删除 | XSS / 表单不允许在邮件正文中 |
 
 完整规则见 [`HTML 兼容白名单`](./lark-mail-html-allowlist.md)。
 
-## 三、3 套主流场景模板（完整可复用 HTML）
+## 四、3 套主流场景模板（完整可复用 HTML）
 
 每套模板含问候开场 + 正文骨架 + 落款，AI 套用时直接替换 `[变量]` 即可。所有模板均通过 lint（无 warning，无 error）。
 
@@ -261,7 +284,9 @@
 </div>
 ```
 
-## 四、套用模板的实务
+> **注**：上面 3 套是教学示例。**实际可用模板见 [`assets/templates/`](../assets/templates/)** —— 那里有 8 个按飞书原生格式（lint autofix 后的输出）写好的真模板，直接 cat 给 lcpr `--body` 即可使用。模板检索用 [`scripts/mail_template_tool.py`](../scripts/mail_template_tool.py) 的 `search` / `summarize` / `extract`。
+
+## 五、套用模板的实务
 
 1. **替换 `[变量]`**：所有方括号占位符是 placeholder，AI 套用时全部替换。
 2. **删除不适用的段**：模板提供完整结构，但具体场景下某些段可能不需要（例：通知模板的"字段对照表"不是每次都有）；删除整段而不是留空表格。
@@ -280,6 +305,8 @@
 
 ## 相关文档
 
+- [飞书原生写法片段库](./mail-feishu-native-snippets.md)
+- [模板目录](./mail-template-catalog.md) / [模板索引 JSON](./mail-template-index.json)
 - [HTML 兼容白名单](./lark-mail-html-allowlist.md)
 - [`+lint-html` 用法](./lark-mail-lint-html.md)
 - 写信 shortcut: [`+send`](./lark-mail-send.md) / [`+draft-create`](./lark-mail-draft-create.md) / [`+reply`](./lark-mail-reply.md) / [`+reply-all`](./lark-mail-reply-all.md) / [`+forward`](./lark-mail-forward.md) / [`+draft-edit`](./lark-mail-draft-edit.md)

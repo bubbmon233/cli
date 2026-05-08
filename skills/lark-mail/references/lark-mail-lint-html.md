@@ -89,13 +89,16 @@ lark-cli mail +lint-html --body '<p>x</p>' --dry-run
 
 | 档位 | 处理 | 覆盖范围 |
 |------|------|----------|
-| 通过 | 不报 finding | `<p>` / `<div>` / `<span>` / `<a href=...>` / `<img src=...>` / `<table>` / `<ul>/<ol>/<li>` / `<blockquote>` / `<h1>-<h6>` / `<b>/<i>/<em>/<strong>/<u>/<s>` / `<sub>/<sup>` / `<pre>/<code>` / 飞书原生 quote 类（`adit-html-block*`、`history-quote-*`、`lark-mail-doc-quote`） |
+| 通过 | 不报 finding | `<p>` / `<div>` / `<span>` / `<a href=...>` / `<img src=...>` / `<table>` / `<ul>/<ol>/<li>` / `<blockquote>` / `<h1>-<h6>` / `<b>/<i>/<em>/<strong>/<u>/<s>` / `<sub>/<sup>` / `<pre>/<code>` / **`<style>` 块**（飞书 mail 服务端渲染时自动加 selector scope class 隔离）/ 飞书原生 quote 类（`adit-html-block*`、`history-quote-*`、`lark-mail-doc-quote`） |
+| **飞书原生 autofix** | warning，写信路径默认补全 inline style + class + data marker | `<p>` → 飞书原生 div 双层嵌套；`<ul>/<ol>/<li>` → 飞书 native list-block（含 `data-list-bullet/number` / `class="temp-li bullet1/number1"` / `data-li-line` / `data-list` / `data-ol-id` / `data-start` 全套 marker + 内容双层 span 包裹）；`<blockquote>` → 左侧 2px 灰边 + 灰文字；`<a>` → `not-doclink` class + 飞书蓝 |
 | Warning + Autofix | warning，`--auto-fix=true` 时降级 | `<font>` → `<span style>`；`<center>` → `<div style="text-align:center">`；`<marquee>` / `<blink>` → `<span>` |
-| Error（删除） | error，`--strict` 时非零退出 | `<script>` / `<style>` / `<iframe>` / `<object>` / `<embed>` / `<form>` / `<input>` / `<link>` / `<meta>` / `<base>`；属性 `on*`（`onclick` / `onerror` / ...）；`javascript:` / `vbscript:` / `file:` URL；外链 `<link rel="stylesheet">` |
+| Error（删除） | error，`--strict` 时非零退出 | `<script>` / `<iframe>` / `<object>` / `<embed>` / `<form>` / `<input>` / `<link>` / `<meta>` / `<base>`；属性 `on*`（`onclick` / `onerror` / ...）；`javascript:` / `vbscript:` / `file:` URL；外链 `<link rel="stylesheet">` |
+
+**飞书原生 autofix** 规则的目的：让 AI 写最简陋的 HTML（`<p>` / `<ul><li>` / `<ol><li>` / `<blockquote>` / `<a>`），lint autofix 自动补全为飞书 mail-editor 真原生格式。详见 [飞书原生写法铁律](./lark-mail-feishu-native.md)。
 
 URL scheme 白名单：`http(s):` / `mailto:` / `cid:` / `data:image/*` 通过；`javascript:` / `vbscript:` / `file:` 删除并报 error；其他 scheme（如 `webcal:`）警告。
 
-style 属性按 CSS property 白名单过滤：`color` / `background-color` / `font-size` / `font-weight` / `font-style` / `text-align` / `text-decoration` / `line-height` / `padding` / `margin` / `border` / `border-*` / `width` / `height` / `display` / `text-indent` / 飞书 quote 默认样式（`white-space` / `word-break` / ...）；其余 property 删除并记 warning。
+style 属性按 CSS property 白名单过滤：`color` / `background-color` / `font-size` / `font-weight` / `font-style` / `font-family` / `text-align` / `text-decoration` / `line-height` / `padding` / `margin` / `border` / `border-*`（含 `border-radius`）/ `width` / `height` / `display` / `text-indent` / `list-style` / `list-style-type` / `list-style-position` / `transition` / 飞书 quote 默认样式（`white-space` / `word-break` / ...）；其余 property 删除并记 warning。
 
 ## 典型场景
 
