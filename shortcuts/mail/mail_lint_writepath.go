@@ -10,16 +10,19 @@ import (
 
 // showLintDetailsFlag is the optional --show-lint-details flag shared by every
 // compose shortcut (+send / +draft-create / +reply / +reply-all / +forward /
-// +draft-edit). By default the envelope only carries `lint_applied_count` /
-// `original_blocked_count`; passing this flag attaches the full
-// `lint_applied[]` / `original_blocked[]` arrays so callers can inspect the
-// individual findings for debugging. Default-off keeps envelope small for AI
-// consumers — rich-list templates can trigger 20+ warnings whose full payload
-// would balloon the response by thousands of tokens.
+// +draft-edit). By default the envelope carries no lint fields at all; passing
+// this flag attaches all four lint contract keys together (`lint_applied_count`
+// / `original_blocked_count` / `lint_applied[]` / `original_blocked[]`) so
+// callers can inspect both the counts and the individual findings for
+// debugging. The four keys enter and leave the envelope as a single group
+// (字段同进同退) — they are never present in a half state. Default-off keeps
+// the envelope small for AI consumers; rich-list templates can trigger 20+
+// warnings whose full payload would balloon the response by thousands of
+// tokens, and most callers do not need to know the lint pass ran.
 var showLintDetailsFlag = common.Flag{
 	Name: "show-lint-details",
 	Type: "bool",
-	Desc: "Include the full lint_applied[] / original_blocked[] arrays in the envelope. Default: only counts (lint_applied_count / original_blocked_count) are returned to keep the envelope small.",
+	Desc: "Include lint metadata (lint_applied_count / original_blocked_count / lint_applied[] / original_blocked[]) in the envelope. Default: no lint fields are returned to keep the envelope small.",
 }
 
 // runWritePathLint is the single entrypoint compose 5 + +draft-edit body ops
@@ -55,14 +58,20 @@ func runWritePathLint(body string) (cleaned string, rep lint.Report) {
 // applyLintToEnvelope mutates the OutFormat data map by adding the
 // writing-path lint contract keys.
 //
-//   - `lint_applied_count` / `original_blocked_count` — ALWAYS present.
-//     Counts let AI / users know whether lint changed anything without paying
-//     the token cost of the full Finding payload (S3 envelope contract:
-//     compose responses must stay small enough for AI consumers).
-//   - `lint_applied[]` / `original_blocked[]` — ONLY present when the caller
-//     passes `--show-lint-details`. Both arrays are non-nil (possibly empty)
-//     so detail-mode consumers can rely on `data.lint_applied[]` /
-//     `data.original_blocked[]` unconditionally.
+// The four lint contract keys (`lint_applied_count` / `original_blocked_count`
+// / `lint_applied[]` / `original_blocked[]`) enter and leave the envelope as a
+// single group (字段同进同退) — they are never present in a half state.
+//
+//   - When `showDetails` is false (default): the function adds zero keys to
+//     `data`. The envelope therefore carries no lint metadata at all,
+//     keeping it small for AI consumers who do not need to know the lint
+//     pass ran.
+//   - When `showDetails` is true (caller passed `--show-lint-details`): all
+//     four keys are added together. Both `lint_applied[]` and
+//     `original_blocked[]` are non-nil (possibly empty) so detail-mode
+//     consumers can rely on `data.lint_applied[]` / `data.original_blocked[]`
+//     unconditionally, and the count fields always match
+//     `len(data.lint_applied)` / `len(data.original_blocked)`.
 func applyLintToEnvelope(data map[string]interface{}, applied, blocked []lint.Finding, showDetails bool) {
 	if applied == nil {
 		applied = []lint.Finding{}
@@ -70,9 +79,9 @@ func applyLintToEnvelope(data map[string]interface{}, applied, blocked []lint.Fi
 	if blocked == nil {
 		blocked = []lint.Finding{}
 	}
-	data["lint_applied_count"] = len(applied)
-	data["original_blocked_count"] = len(blocked)
 	if showDetails {
+		data["lint_applied_count"] = len(applied)
+		data["original_blocked_count"] = len(blocked)
 		data["lint_applied"] = applied
 		data["original_blocked"] = blocked
 	}
