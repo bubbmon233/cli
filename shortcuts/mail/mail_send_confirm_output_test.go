@@ -87,8 +87,8 @@ func TestBuildDraftSavedOutputIncludesReferenceOnlyWhenPresent(t *testing.T) {
 	if withReference["reference"] != "https://www.feishu.cn/mail?draftId=draft_001" {
 		t.Fatalf("reference = %v", withReference["reference"])
 	}
-	if _, ok := withReference["tip"]; ok {
-		t.Fatalf("tip should be omitted from default envelope, got %#v", withReference["tip"])
+	if withReference["tip"] == "" {
+		t.Fatalf("tip should be populated")
 	}
 
 	withoutReference := buildDraftSavedOutput(draftpkg.DraftResult{
@@ -100,8 +100,8 @@ func TestBuildDraftSavedOutputIncludesReferenceOnlyWhenPresent(t *testing.T) {
 	if _, ok := withoutReference["reference"]; ok {
 		t.Fatalf("reference should be omitted, got %#v", withoutReference["reference"])
 	}
-	if _, ok := withoutReference["tip"]; ok {
-		t.Fatalf("tip should be omitted from default envelope, got %#v", withoutReference["tip"])
+	if withoutReference["tip"] == "" {
+		t.Fatalf("tip should be populated")
 	}
 }
 

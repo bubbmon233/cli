@@ -2193,9 +2193,9 @@ func buildDraftSendOutput(resData map[string]interface{}, mailboxID string) map[
 // buildDraftSavedOutput formats a successful drafts.create / drafts.update
 // response into the public output map (draft_id + optional preview URL).
 func buildDraftSavedOutput(draftResult draftpkg.DraftResult, mailboxID string) map[string]interface{} {
-	_ = mailboxID // retained for caller-signature compatibility; default envelope no longer emits a tip key
 	out := map[string]interface{}{
 		"draft_id": draftResult.DraftID,
+		"tip":      fmt.Sprintf(`draft saved. To send: lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"%s","draft_id":"%s"}'`, mailboxID, draftResult.DraftID),
 	}
 	if draftResult.Reference != "" {
 		out["reference"] = draftResult.Reference
