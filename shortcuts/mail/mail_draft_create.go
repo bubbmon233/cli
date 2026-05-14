@@ -181,10 +181,14 @@ var MailDraftCreate = common.Shortcut{
 		if draftResult.Reference != "" {
 			out["reference"] = draftResult.Reference
 		}
-		// Writing-path lint envelope: counts always present; full Finding
-		// arrays only when the caller asked for them via --show-lint-details.
+		// Writing-path lint envelope: default has no lint fields; full Finding
+		// arrays (`lint_applied[]` / `original_blocked[]`) only when the
+		// caller asked for them via --show-lint-details.
 		applyLintToEnvelope(out, lintApplied, lintBlocked, runtime.Bool("show-lint-details"))
 		addComposeHint(out)
+		// `draft_edit_hint` is attached ONLY here (+draft-create) per
+		// tech-design §6.1.1 — the other 5 compose shortcuts do not.
+		addDraftEditHint(out)
 		runtime.OutFormat(out, nil, func(w io.Writer) {
 			fmt.Fprintln(w, "Draft created.")
 			// Intentionally keep +draft-create output minimal: unlike reply/forward/send

@@ -11,18 +11,19 @@ import (
 // showLintDetailsFlag is the optional --show-lint-details flag shared by every
 // compose shortcut (+send / +draft-create / +reply / +reply-all / +forward /
 // +draft-edit). By default the envelope carries no lint fields at all; passing
-// this flag attaches all four lint contract keys together (`lint_applied_count`
-// / `original_blocked_count` / `lint_applied[]` / `original_blocked[]`) so
-// callers can inspect both the counts and the individual findings for
-// debugging. The four keys enter and leave the envelope as a single group
-// (字段同进同退) — they are never present in a half state. Default-off keeps
-// the envelope small for AI consumers; rich-list templates can trigger 20+
-// warnings whose full payload would balloon the response by thousands of
-// tokens, and most callers do not need to know the lint pass ran.
+// this flag attaches the two lint contract Finding arrays together
+// (`lint_applied[]` / `original_blocked[]`) so callers can inspect the
+// individual findings for debugging. The two keys enter and leave the envelope
+// as a single group (字段同进同退) — they are never present in a half state.
+// Default-off keeps the envelope small for AI consumers; rich-list templates
+// can trigger 20+ warnings whose full payload would balloon the response by
+// thousands of tokens, and most callers do not need to know the lint pass ran.
+// Callers who need a count can compute it locally via `len(lint_applied)` /
+// `len(original_blocked)`.
 var showLintDetailsFlag = common.Flag{
 	Name: "show-lint-details",
 	Type: "bool",
-	Desc: "Include lint metadata (lint_applied_count / original_blocked_count / lint_applied[] / original_blocked[]) in the envelope. Default: no lint fields are returned to keep the envelope small.",
+	Desc: "Include lint metadata (lint_applied[] / original_blocked[]) in the envelope. Default: no lint fields are returned to keep the envelope small.",
 }
 
 // runWritePathLint is the single entrypoint compose 5 + +draft-edit body ops
@@ -58,20 +59,20 @@ func runWritePathLint(body string) (cleaned string, rep lint.Report) {
 // applyLintToEnvelope mutates the OutFormat data map by adding the
 // writing-path lint contract keys.
 //
-// The four lint contract keys (`lint_applied_count` / `original_blocked_count`
-// / `lint_applied[]` / `original_blocked[]`) enter and leave the envelope as a
-// single group (字段同进同退) — they are never present in a half state.
+// The two lint contract Finding arrays (`lint_applied[]` / `original_blocked[]`)
+// enter and leave the envelope as a single group (字段同进同退) — they are
+// never present in a half state.
 //
 //   - When `showDetails` is false (default): the function adds zero keys to
 //     `data`. The envelope therefore carries no lint metadata at all,
 //     keeping it small for AI consumers who do not need to know the lint
 //     pass ran.
-//   - When `showDetails` is true (caller passed `--show-lint-details`): all
-//     four keys are added together. Both `lint_applied[]` and
-//     `original_blocked[]` are non-nil (possibly empty) so detail-mode
-//     consumers can rely on `data.lint_applied[]` / `data.original_blocked[]`
-//     unconditionally, and the count fields always match
-//     `len(data.lint_applied)` / `len(data.original_blocked)`.
+//   - When `showDetails` is true (caller passed `--show-lint-details`): both
+//     arrays are added together. `lint_applied[]` and `original_blocked[]`
+//     are non-nil (possibly empty) so detail-mode consumers can rely on
+//     `data.lint_applied[]` / `data.original_blocked[]` unconditionally. The
+//     envelope no longer carries any `*_count` fields — callers needing a
+//     count compute it via `len(lint_applied)` / `len(original_blocked)`.
 func applyLintToEnvelope(data map[string]interface{}, applied, blocked []lint.Finding, showDetails bool) {
 	if applied == nil {
 		applied = []lint.Finding{}
@@ -80,8 +81,6 @@ func applyLintToEnvelope(data map[string]interface{}, applied, blocked []lint.Fi
 		blocked = []lint.Finding{}
 	}
 	if showDetails {
-		data["lint_applied_count"] = len(applied)
-		data["original_blocked_count"] = len(blocked)
 		data["lint_applied"] = applied
 		data["original_blocked"] = blocked
 	}
@@ -121,4 +120,21 @@ const composeHTMLGuideHint = "Please refer to skills/lark-mail/references/lark-m
 // per top-level success branch so consumers always see the same hint key.
 func addComposeHint(out map[string]interface{}) {
 	out["compose_hint"] = composeHTMLGuideHint
+}
+
+// draftEditHintConst is the recommended-workflow message that the
+// +draft-create shortcut attaches to its stdout envelope under the key
+// `draft_edit_hint`. AI / users SHOULD edit the existing draft via
+// `+draft-edit --draft-id <id>` rather than re-running `+draft-create`,
+// which would create a duplicate draft entry instead of updating the
+// original one.
+const draftEditHintConst = "To modify this draft later (body, subject, recipients, attachments), prefer 'lark-cli mail +draft-edit --draft-id <id>' over creating a new draft via '+draft-create'. Re-running '+draft-create' will produce a separate draft entry instead of updating the existing one."
+
+// addDraftEditHint inserts the draft-edit recommendation into the envelope
+// data map under the key `draft_edit_hint`. ONLY +draft-create calls this —
+// the other 5 compose shortcuts (+send / +reply / +reply-all / +forward /
+// +draft-edit) MUST NOT attach `draft_edit_hint` per the envelope contract
+// (tech-design §6.1.1 — table row applies only to MailDraftCreate).
+func addDraftEditHint(out map[string]interface{}) {
+	out["draft_edit_hint"] = draftEditHintConst
 }

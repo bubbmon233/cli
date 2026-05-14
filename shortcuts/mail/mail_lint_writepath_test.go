@@ -56,10 +56,10 @@ func TestRunWritePathLint_HTMLAlwaysAutofixesNeverStrict(t *testing.T) {
 	}
 }
 
-// TestApplyLintToEnvelope_DefaultOnlyCounts verifies the helper writes
-// only counts in the default (non-detail) mode and omits the full Finding
-// arrays.
-func TestApplyLintToEnvelope_DefaultOnlyCounts(t *testing.T) {
+// TestApplyLintToEnvelope_DefaultEmitsNoLintFields verifies the helper writes
+// zero keys in the default (non-detail) mode — neither count fields nor the
+// full Finding arrays appear; the envelope stays small.
+func TestApplyLintToEnvelope_DefaultEmitsNoLintFields(t *testing.T) {
 	data := map[string]interface{}{"existing": "value"}
 	rep := lint.EmptyReport(`<p>x</p>`)
 	applyLintToEnvelope(data, rep.Applied, rep.Blocked, false)
@@ -67,11 +67,11 @@ func TestApplyLintToEnvelope_DefaultOnlyCounts(t *testing.T) {
 	if data["existing"] != "value" {
 		t.Error("existing key was clobbered")
 	}
-	if data["lint_applied_count"] != 0 {
-		t.Errorf("lint_applied_count = %v, want 0", data["lint_applied_count"])
+	if _, ok := data["lint_applied_count"]; ok {
+		t.Error("lint_applied_count must NOT be present in default mode")
 	}
-	if data["original_blocked_count"] != 0 {
-		t.Errorf("original_blocked_count = %v, want 0", data["original_blocked_count"])
+	if _, ok := data["original_blocked_count"]; ok {
+		t.Error("original_blocked_count must NOT be present in default mode")
 	}
 	if _, ok := data["lint_applied"]; ok {
 		t.Error("lint_applied[] must NOT be present in default mode")
@@ -82,15 +82,19 @@ func TestApplyLintToEnvelope_DefaultOnlyCounts(t *testing.T) {
 }
 
 // TestApplyLintToEnvelope_DetailModeIncludesArrays verifies the detail mode
-// (showDetails=true) attaches the full non-nil Finding arrays alongside the
-// count fields.
+// (showDetails=true) attaches the two non-nil Finding arrays only. The
+// `*_count` fields are no longer emitted (callers can compute counts via
+// `len(arr)` themselves).
 func TestApplyLintToEnvelope_DetailModeIncludesArrays(t *testing.T) {
 	data := map[string]interface{}{}
 	rep := lint.EmptyReport(`<p>x</p>`)
 	applyLintToEnvelope(data, rep.Applied, rep.Blocked, true)
 
-	if data["lint_applied_count"] != 0 {
-		t.Errorf("lint_applied_count = %v, want 0", data["lint_applied_count"])
+	if _, ok := data["lint_applied_count"]; ok {
+		t.Error("lint_applied_count must NOT be present (count fields removed)")
+	}
+	if _, ok := data["original_blocked_count"]; ok {
+		t.Error("original_blocked_count must NOT be present (count fields removed)")
 	}
 	la, ok := data["lint_applied"].([]lint.Finding)
 	if !ok {
@@ -113,8 +117,9 @@ func TestApplyLintToEnvelope_DetailModeIncludesArrays(t *testing.T) {
 // =====================================================================
 
 // TestMailDraftCreate_WritePathLintEnvelopeDefault verifies +draft-create's
-// default envelope carries lint_applied_count / original_blocked_count and
-// suppresses the full Finding arrays.
+// default envelope contains the three always-present hint/id fields
+// (compose_hint + draft_edit_hint + draft_id) and carries NO lint fields at
+// all — neither `*_count` nor the full Finding arrays.
 func TestMailDraftCreate_WritePathLintEnvelopeDefault(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	chdirTemp(t)
@@ -132,16 +137,26 @@ func TestMailDraftCreate_WritePathLintEnvelopeDefault(t *testing.T) {
 	}
 	data := decodeShortcutEnvelopeData(t, stdout)
 
-	// Counts must be present and reflect ≥1 warning (<font>) + ≥1 error (<script>).
-	laCount, ok := data["lint_applied_count"].(float64)
-	if !ok || int(laCount) < 1 {
-		t.Errorf("lint_applied_count missing or <1: %v", data["lint_applied_count"])
+	// The three always-present hint/id fields must appear.
+	if hint, _ := data["compose_hint"].(string); hint == "" {
+		t.Error("compose_hint must be present in default envelope")
 	}
-	obCount, ok := data["original_blocked_count"].(float64)
-	if !ok || int(obCount) < 1 {
-		t.Errorf("original_blocked_count missing or <1: %v", data["original_blocked_count"])
+	if hint, _ := data["draft_edit_hint"].(string); hint == "" {
+		t.Error("draft_edit_hint must be present in +draft-create default envelope")
+	} else if hint != draftEditHintConst {
+		t.Errorf("draft_edit_hint = %q, want exact const value", hint)
 	}
-	// Detail arrays must NOT appear in default mode.
+	if id, _ := data["draft_id"].(string); id == "" {
+		t.Error("draft_id must be present in default envelope")
+	}
+
+	// No lint fields (neither count nor arrays) in default mode.
+	if _, present := data["lint_applied_count"]; present {
+		t.Error("lint_applied_count must NOT appear (count fields removed)")
+	}
+	if _, present := data["original_blocked_count"]; present {
+		t.Error("original_blocked_count must NOT appear (count fields removed)")
+	}
 	if _, present := data["lint_applied"]; present {
 		t.Error("lint_applied[] must be hidden in default mode")
 	}
@@ -151,7 +166,8 @@ func TestMailDraftCreate_WritePathLintEnvelopeDefault(t *testing.T) {
 }
 
 // TestMailDraftCreate_WritePathLintEnvelopeWithDetails verifies that passing
-// --show-lint-details attaches the full Finding arrays alongside counts.
+// --show-lint-details attaches the two Finding arrays only — no `*_count`
+// fields — while still keeping compose_hint + draft_edit_hint + draft_id.
 func TestMailDraftCreate_WritePathLintEnvelopeWithDetails(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	chdirTemp(t)
@@ -169,6 +185,28 @@ func TestMailDraftCreate_WritePathLintEnvelopeWithDetails(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data := decodeShortcutEnvelopeData(t, stdout)
+
+	// Always-present hint/id fields survive in detail mode.
+	if hint, _ := data["compose_hint"].(string); hint == "" {
+		t.Error("compose_hint must be present in detail envelope")
+	}
+	if hint, _ := data["draft_edit_hint"].(string); hint == "" {
+		t.Error("draft_edit_hint must be present in +draft-create detail envelope")
+	} else if hint != draftEditHintConst {
+		t.Errorf("draft_edit_hint = %q, want exact const value", hint)
+	}
+	if id, _ := data["draft_id"].(string); id == "" {
+		t.Error("draft_id must be present in detail envelope")
+	}
+
+	// `*_count` fields are gone — callers compute counts via len(arr).
+	if _, present := data["lint_applied_count"]; present {
+		t.Error("lint_applied_count must NOT appear (count fields removed)")
+	}
+	if _, present := data["original_blocked_count"]; present {
+		t.Error("original_blocked_count must NOT appear (count fields removed)")
+	}
+
 	la, ok := data["lint_applied"].([]interface{})
 	if !ok {
 		t.Fatalf("lint_applied missing or wrong type: %T", data["lint_applied"])
@@ -185,9 +223,10 @@ func TestMailDraftCreate_WritePathLintEnvelopeWithDetails(t *testing.T) {
 	}
 }
 
-// TestMailDraftCreate_PlainTextWritePathCountsAreZero verifies the envelope
-// emits zero counts (and no detail arrays) on the plain-text path.
-func TestMailDraftCreate_PlainTextWritePathCountsAreZero(t *testing.T) {
+// TestMailDraftCreate_PlainTextWritePathOmitsLintFields verifies the
+// plain-text path's default envelope contains the always-present
+// compose_hint + draft_edit_hint + draft_id and emits no lint fields at all.
+func TestMailDraftCreate_PlainTextWritePathOmitsLintFields(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	chdirTemp(t)
 	registerMailboxProfileMock(reg)
@@ -204,11 +243,26 @@ func TestMailDraftCreate_PlainTextWritePathCountsAreZero(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data := decodeShortcutEnvelopeData(t, stdout)
-	if cnt, _ := data["lint_applied_count"].(float64); int(cnt) != 0 {
-		t.Errorf("lint_applied_count should be 0 on plain-text path, got %v", data["lint_applied_count"])
+
+	// Always-present hint/id fields on the plain-text branch.
+	if hint, _ := data["compose_hint"].(string); hint == "" {
+		t.Error("compose_hint must be present on plain-text path")
 	}
-	if cnt, _ := data["original_blocked_count"].(float64); int(cnt) != 0 {
-		t.Errorf("original_blocked_count should be 0 on plain-text path, got %v", data["original_blocked_count"])
+	if hint, _ := data["draft_edit_hint"].(string); hint == "" {
+		t.Error("draft_edit_hint must be present on +draft-create plain-text path")
+	} else if hint != draftEditHintConst {
+		t.Errorf("draft_edit_hint = %q, want exact const value", hint)
+	}
+	if id, _ := data["draft_id"].(string); id == "" {
+		t.Error("draft_id must be present on plain-text path")
+	}
+
+	// No lint fields at all on the default plain-text path.
+	if _, present := data["lint_applied_count"]; present {
+		t.Error("lint_applied_count must NOT appear on plain-text default path")
+	}
+	if _, present := data["original_blocked_count"]; present {
+		t.Error("original_blocked_count must NOT appear on plain-text default path")
 	}
 	if _, present := data["lint_applied"]; present {
 		t.Error("lint_applied[] must be hidden in default mode (plain-text)")

@@ -285,23 +285,22 @@
 
 ## 写信 shortcut 的 lint 返回值
 
-写信链路（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）调用 `emlbuilder` 之前会强制 lint 净化 HTML，stdout envelope 永远携带两个 count 字段：
+写信链路（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）调用 `emlbuilder` 之前会强制 lint 净化 HTML，但 **默认 envelope 不携带任何 lint 字段**（既无 `*_count` 也无 finding 数组），envelope 保持小巧供 AI 消费。每个写信 shortcut 默认 envelope 的字段集合：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `lint_applied_count` | int | warning 类 finding 的条数（lint 自动修复了多少处装饰性问题，如 `<p>` → 双层 div、`<ul>/<li>` → native list-block 等） |
-| `original_blocked_count` | int | error 类 finding 的条数（lint 强制删除了多少 XSS / 危险标签 / 危险 URL；非空意味 body 含真正的安全 / 合规问题） |
+| 字段 | 出现条件 | 说明 |
+|------|---------|------|
+| `compose_hint` | 6 个 shortcut 默认都附 | 固定英文文案，提示 AI / 用户在组合 HTML 前阅读本文 |
+| `draft_edit_hint` | **仅** `+draft-create` 默认附（其他 5 个 shortcut 不附） | 固定英文文案，提示拿到 `draft_id` 后改稿走 `+draft-edit --draft-id <id>` 而不是重跑 `+draft-create` 产生重复草稿 |
+| `draft_id` / `message_id` | OAPI 写入成功后写回 | `+draft-create` / `+draft-edit` 返回 `draft_id`；`+send` / `+reply` / `+reply-all` / `+forward` 返回 `message_id` |
 
-默认 envelope **不包含**完整 finding 数组——`lint_applied_count` 已经足够告诉 AI / 用户「lint 改了 N 条」，避免一封含 20 个 mention chip 的周报模板把 envelope 撑到几千 token。
-
-要看完整 finding 时加 `--show-lint-details`：
+需要看 lint 详情时加 `--show-lint-details`：
 
 ```bash
 lark-cli mail +draft-create --show-lint-details \
   --to alice@example.com --subject 'Hi' --body '<p>正文</p>'
 ```
 
-加了 `--show-lint-details` 后 envelope 同时返回 `lint_applied[]` / `original_blocked[]`（每条含 `rule_id` / `severity` / `tag_or_attr` / `excerpt` / `hint`）。**默认场景不要加这个 flag**，徒增 token 消耗。
+加了 `--show-lint-details` 后 envelope 同时返回 `lint_applied[]` / `original_blocked[]` 两个完整 Finding 数组（每条含 `rule_id` / `severity` / `tag_or_attr` / `excerpt` / `hint`），**不再返回任何 `*_count` 字段** —— 调用方需要 count 时直接 `len(lint_applied)` / `len(original_blocked)`。**默认场景不要加这个 flag**，徒增 token 消耗。
 
 如果只是想预览 lint 会怎么改 HTML，建议直接用 [`+lint-html`](./lark-mail-lint-html.md) 命令——它本来就返回完整 `warnings[]` / `errors[]` + `cleaned_html`，比写信链路 `--show-lint-details` 更清晰。
 

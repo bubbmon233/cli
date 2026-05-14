@@ -10,7 +10,7 @@
 - 自动修复（可选）非法或不规范写法，输出 `cleaned_html`；
 - 不写入任何邮箱状态，不调用任何 OAPI。
 
-写信链路（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）已**强制内置**同一份 lint，提交前会自动净化并通过 stdout 返回 `lint_applied_count` / `original_blocked_count`（加 `--show-lint-details` 可拿到完整 `lint_applied[]` / `original_blocked[]`，详见 [邮件 HTML 写法指南](./lark-mail-html.md#写信-shortcut-的-lint-返回值)）。本命令是写信链路 lint 的预览版，行为一致，调用更轻量，适合：
+写信链路（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）已**强制内置**同一份 lint，提交前会自动净化 HTML。默认 envelope 不携带任何 lint 字段以保持响应小巧；加 `--show-lint-details` 可拿到完整 `lint_applied[]` / `original_blocked[]` 两个 Finding 数组（不再返回任何 `*_count` 字段，调用方需要 count 时 `len(arr)` 即可，详见 [邮件 HTML 写法指南](./lark-mail-html.md#写信-shortcut-的-lint-返回值)）。本命令是写信链路 lint 的预览版，行为一致，调用更轻量，适合：
 
 - AI / 用户在创建草稿前自检 HTML 会被怎么改写；
 - CI 流水线把 HTML 模板当作产物校验。
