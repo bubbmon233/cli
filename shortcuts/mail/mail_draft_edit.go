@@ -35,6 +35,7 @@ var MailDraftEdit = common.Shortcut{
 		{Name: "set-to", Desc: "Replace the entire To recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
 		{Name: "set-cc", Desc: "Replace the entire Cc recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
 		{Name: "set-bcc", Desc: "Replace the entire Bcc recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
+		{Name: "body", Desc: "Full email body for a complete replacement (set_body). Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --patch-file with set_reply_body when you need to preserve an existing reply/forward quote block; use --body when you want a full body replacement. Cannot be combined with --patch-file body ops."},
 		{Name: "patch-file", Desc: "Edit entry point for body edits, incremental recipient changes, header edits, attachment changes, or inline-image changes. All body edits MUST go through --patch-file. Two body ops: set_body (full replacement including quote) and set_reply_body (replaces only user-authored content, auto-preserves quote block). Run --inspect first to check has_quoted_content, then --print-patch-template for the JSON structure. Relative path only."},
 		{Name: "print-patch-template", Type: "bool", Desc: "Print the JSON template and supported operations for the --patch-file flag. Recommended first step before generating a patch file. No draft read or write is performed."},
 		{Name: "set-priority", Desc: "Set email priority: high, normal, low. Setting 'normal' removes any existing priority header."},
@@ -402,6 +403,18 @@ func buildDraftEditPatch(runtime *common.RuntimeContext) (draftpkg.Patch, error)
 	setRecipients("cc", runtime.Str("set-cc"))
 	setRecipients("bcc", runtime.Str("set-bcc"))
 
+	// --body is a convenience shorthand for a set_body patch op. It cannot be
+	// combined with --patch-file body ops (set_body / set_reply_body) to avoid
+	// ambiguous ordering.
+	if bodyVal := runtime.Str("body"); bodyVal != "" {
+		for _, op := range patch.Ops {
+			if op.Op == "set_body" || op.Op == "set_reply_body" {
+				return patch, output.ErrValidation("--body and --patch-file body ops (set_body/set_reply_body) are mutually exclusive; use one or the other")
+			}
+		}
+		patch.Ops = append(patch.Ops, draftpkg.PatchOp{Op: "set_body", Value: bodyVal})
+	}
+
 	// --set-priority → inject set_header / remove_header op
 	if setPriority := runtime.Str("set-priority"); setPriority != "" {
 		headerVal, pErr := parsePriority(setPriority)
@@ -576,7 +589,7 @@ func buildDraftEditPatchTemplate() map[string]interface{} {
 			"`add_inline` is an advanced op for precise CID control only — in most cases, use <img src=\"./path\"> in `set_body`/`set_reply_body` instead",
 			"`ops` is executed in order",
 			"all file paths (--patch-file and `path` fields in ops) must be relative — no absolute paths or .. traversal",
-			"all body edits MUST go through --patch-file; there is no --set-body flag",
+			"use --body <html> for a quick full-body replacement (equivalent to a set_body op); use --patch-file with set_body/set_reply_body for advanced body edits; --body and --patch-file body ops are mutually exclusive",
 			"`set_body` replaces the user-authored content. It does NOT auto-preserve the old quote block (include one in value if needed, or use `set_reply_body`). Signature, large attachment card, and normal attachment MIME parts are auto-preserved. When the draft has both text/plain and text/html, it updates the HTML body and regenerates the plain-text summary, so the input should be HTML.",
 			"`set_reply_body` replaces only the user-authored portion of the body and automatically re-appends the trailing reply/forward quote block, signature, and large attachment card; the value you pass should contain ONLY the new user-authored content (no quote, no signature, no attachment card). If the user wants to modify content INSIDE the quote block, use `set_body` instead. If the draft has no quote block, it behaves identically to `set_body`.",
 			"`body_kind` only supports text/plain and text/html",
