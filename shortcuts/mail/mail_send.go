@@ -6,6 +6,7 @@ package mail
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/larksuite/cli/internal/output"
@@ -27,7 +28,8 @@ var MailSend = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "to", Desc: "Recipient email address(es), comma-separated"},
 		{Name: "subject", Desc: "Email subject. Required unless --template-id supplies a non-empty subject."},
-		{Name: "body", Desc: "Email body. Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --plain-text to force plain-text mode. Required unless --template-id supplies a non-empty body."},
+		{Name: "body", Desc: "Email body. Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file. Required unless --template-id supplies a non-empty body."},
+		{Name: "body-file", Desc: "Path (relative, within cwd subtree) to a file containing the email body HTML. Mutually exclusive with --body. Required unless --body or --template-id is set.", Input: []string{common.File}},
 		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to the mailbox's primary address."},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
 		{Name: "cc", Desc: "CC email address(es), comma-separated"},
@@ -76,11 +78,24 @@ var MailSend = common.Shortcut{
 			return err
 		}
 		hasTemplate := runtime.Str("template-id") != ""
+		bodyFlag := runtime.Str("body")
+		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
+		// --body and --body-file are mutually exclusive.
+		if !bodyEmpty && bodyFile != "" {
+			return output.ErrValidation("--body and --body-file are mutually exclusive; pass exactly one")
+		}
 		if !hasTemplate && strings.TrimSpace(runtime.Str("subject")) == "" {
 			return output.ErrValidation("--subject is required; pass the final email subject (or use --template-id)")
 		}
-		if !hasTemplate && strings.TrimSpace(runtime.Str("body")) == "" {
-			return output.ErrValidation("--body is required; pass the full email body (or use --template-id)")
+		if !hasTemplate && bodyEmpty && bodyFile == "" {
+			return output.ErrValidation("--body or --body-file is required; pass the full email body (or use --template-id)")
+		}
+		// --body-file safety: cwd-subtree only.
+		if bodyFile != "" {
+			if err := runtime.ValidatePath(bodyFile); err != nil {
+				return output.ErrValidation("--body-file: %v", err)
+			}
 		}
 		// With --template-id, tos/ccs/bccs may come from the template, so
 		// defer the at-least-one-recipient check to Execute (after
@@ -99,7 +114,9 @@ var MailSend = common.Shortcut{
 		if err := validateSignatureWithPlainText(runtime.Bool("plain-text"), runtime.Str("signature-id")); err != nil {
 			return err
 		}
-		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), runtime.Str("body")); err != nil {
+		// Pass bodyFlag (empty when --body-file is used); the body HTML check
+		// inside validateComposeInlineAndAttachments is guarded by body != "".
+		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), bodyFlag); err != nil {
 			return err
 		}
 		if err := validateEventFlags(runtime); err != nil {
@@ -110,7 +127,10 @@ var MailSend = common.Shortcut{
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		to := runtime.Str("to")
 		subject := runtime.Str("subject")
-		body := runtime.Str("body")
+		body, err := resolveSendBody(runtime)
+		if err != nil {
+			return err
+		}
 		ccFlag := runtime.Str("cc")
 		bccFlag := runtime.Str("bcc")
 		plainText := runtime.Bool("plain-text")
@@ -317,6 +337,29 @@ var MailSend = common.Shortcut{
 		runtime.Out(out, nil)
 		return nil
 	},
+}
+
+// resolveSendBody returns the email body from --body or --body-file.
+// Validate has already enforced mutual exclusion, so exactly one is set
+// (or neither when --template-id is used).
+func resolveSendBody(runtime *common.RuntimeContext) (string, error) {
+	if body := runtime.Str("body"); strings.TrimSpace(body) != "" {
+		return body, nil
+	}
+	path := strings.TrimSpace(runtime.Str("body-file"))
+	if path == "" {
+		return "", nil // neither set; template-id case
+	}
+	f, err := runtime.FileIO().Open(path)
+	if err != nil {
+		return "", output.ErrValidation("open --body-file %s: %v", path, err)
+	}
+	defer f.Close()
+	buf, err := io.ReadAll(f)
+	if err != nil {
+		return "", output.ErrValidation("read --body-file %s: %v", path, err)
+	}
+	return string(buf), nil
 }
 
 // splitByComma splits a comma-separated string, trimming whitespace from each entry,
