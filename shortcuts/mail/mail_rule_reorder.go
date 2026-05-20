@@ -140,11 +140,8 @@ func validateRuleIDsExist(userIDs, currentIDs []string) error {
 }
 
 func extractRuleIDs(resp map[string]interface{}) ([]string, error) {
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		return nil, output.ErrAPI(0, "unexpected response format", "missing data field")
-	}
-	items, ok := data["items"].([]interface{})
+	// CallAPI/HandleApiResult already extracts the "data" field, so resp is directly {"items": [...]}.
+	items, ok := resp["items"].([]interface{})
 	if !ok {
 		return []string{}, nil
 	}
