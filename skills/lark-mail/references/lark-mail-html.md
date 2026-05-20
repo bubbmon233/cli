@@ -240,7 +240,7 @@
 <!-- 警示红（错误 / 失败 / 红色加粗） -->
 <span style="color:rgb(245,74,69)">警示红</span>
 <!-- 紧急橙（紧急 / 阻塞 / 环比上升） -->
-<span style="color:rgb(225,77,42)">紧急橙</span>
+<span style="color:rgb(255,140,40)">紧急橙</span>
 ```
 
 ### URL scheme
