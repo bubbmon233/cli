@@ -32,7 +32,7 @@ import (
 var MailLintHTML = common.Shortcut{
 	Service:     "mail",
 	Command:     "+lint-html",
-	Description: "Lint mail HTML body for compatibility / safety / Larksuite-native rules. Returns warnings/errors and (default) auto-fixed HTML. Read-only: no draft, no API call. Use this BEFORE creating a draft to preview what the writing-path lint would change, or as a CI gate for static HTML templates.",
+	Description: "Lint mail HTML body for compatibility / safety / Larksuite-native rules. Returns warnings/errors and (always) auto-fixed cleaned_html. Read-only: no draft, no API call. Use this BEFORE creating a draft to preview what the writing-path lint would change.",
 	Risk:        "read",
 	// No API call → no scope requirement. KB Pitfall 3 doesn't apply (no
 	// meta_data.json `accessTokens` to align with).
@@ -49,8 +49,6 @@ var MailLintHTML = common.Shortcut{
 		// callback below.
 		{Name: "body", Desc: "HTML body to lint. Mutually exclusive with --body-file; exactly one is required."},
 		{Name: "body-file", Desc: "Path (relative, within cwd subtree) to a file containing HTML to lint. Mutually exclusive with --body; exactly one is required.", Input: []string{common.File}},
-		{Name: "auto-fix", Type: "bool", Default: "true", Desc: "When true (default), the response includes cleaned_html (HTML rewritten with warnings auto-fixed and errors removed). When false, only the violation list is returned and cleaned_html is omitted."},
-		{Name: "strict", Type: "bool", Default: "false", Desc: "When true, all warnings are promoted to errors and the command exits non-zero on any finding. Useful as a CI gate for static HTML templates. Default false."},
 		showLintDetailsFlag,
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
@@ -85,9 +83,7 @@ var MailLintHTML = common.Shortcut{
 		// has zero side effects.
 		api := common.NewDryRunAPI().
 			Desc("Lint HTML body locally (no API call, no draft mutation, no network IO).").
-			Set("mode", "local-lint-only").
-			Set("auto_fix", runtime.Bool("auto-fix")).
-			Set("strict", runtime.Bool("strict"))
+			Set("mode", "local-lint-only")
 		if path := strings.TrimSpace(runtime.Str("body-file")); path != "" {
 			api = api.Set("body_source", "file").Set("body_file", path)
 		} else {
@@ -101,9 +97,6 @@ var MailLintHTML = common.Shortcut{
 			return err
 		}
 
-		autoFix := runtime.Bool("auto-fix")
-		strict := runtime.Bool("strict")
-
 		// Plain-text input: short-circuit to an empty report (lib short-circuit
 		// path, also useful so users running --body 'plain text' don't get
 		// confused by an empty-but-rewritten output).
@@ -111,7 +104,7 @@ var MailLintHTML = common.Shortcut{
 		if !bodyIsHTML(body) {
 			rep = lint.EmptyReport(body)
 		} else {
-			rep = lint.Run(body, lint.Options{AutoFix: autoFix, Strict: strict})
+			rep = lint.Run(body, lint.Options{})
 		}
 
 		// Public envelope shape: token-frugal by default. `cleaned_html` is
@@ -123,9 +116,8 @@ var MailLintHTML = common.Shortcut{
 		// `+lint-html` as a draft pre-flight check) overwhelmingly only
 		// need cleaned_html.
 		showDetails := runtime.Bool("show-lint-details")
-		data := map[string]interface{}{}
-		if autoFix {
-			data["cleaned_html"] = rep.CleanedHTML
+		data := map[string]interface{}{
+			"cleaned_html": rep.CleanedHTML,
 		}
 		if showDetails {
 			data["warnings"] = rep.Applied // never nil — lib guarantees []
@@ -133,22 +125,14 @@ var MailLintHTML = common.Shortcut{
 		}
 
 		runtime.OutFormat(data, &output.Meta{Count: len(rep.Applied) + len(rep.Blocked)}, func(w io.Writer) {
-			printLintPretty(w, rep, autoFix)
+			printLintPretty(w, rep)
 		})
 
-		// Strict / hard-error exit code semantics. Spec §4.2 row "--strict":
-		// "true 时把所有 warning 视作 error，exit 非零". The lint lib already
-		// promoted warnings to errors when strict is set; we only need to
-		// observe the resulting state.
-		if strict && (rep.HasErrorFindings || rep.HasWarningFindings) {
-			return output.Errorf(output.ExitValidation, "lint_strict",
-				"lint --strict: %d error / %d warning finding(s)",
-				len(rep.Blocked), len(rep.Applied))
-		}
-		// Non-strict path: errors that the writing-path safety floor would
-		// have removed are surfaced via the envelope but do NOT fail the
-		// command — `+lint-html` is a preview / advisory tool. The exit
-		// code stays 0 so CI scripts can post-process the envelope.
+		// The lib already removed errors and rewrote warnings in place;
+		// `+lint-html` is a preview / advisory tool and never bumps the
+		// exit code. CI scripts that want to gate on findings should
+		// post-process the envelope (e.g. with `--show-lint-details` and
+		// jq on `errors[]` / `warnings[]`).
 		return nil
 	},
 }
@@ -165,26 +149,15 @@ func readLintHTMLBody(runtime *common.RuntimeContext) (string, error) {
 		// Should be unreachable given Validate, but defensive.
 		return "", output.ErrValidation("internal: --body-file empty after Validate")
 	}
-	f, err := runtime.FileIO().Open(path)
-	if err != nil {
-		return "", output.ErrValidation("open --body-file %s: %v", path, err)
-	}
-	defer f.Close()
-	buf, err := io.ReadAll(f)
-	if err != nil {
-		return "", output.ErrValidation("read --body-file %s: %v", path, err)
-	}
-	return string(buf), nil
+	return readBodyFile(runtime.FileIO(), path)
 }
 
 // printLintPretty renders the lint report as a human-readable summary used
 // when --format pretty is selected. Stays terse so CI logs aren't drowned.
-func printLintPretty(w io.Writer, rep lint.Report, autoFix bool) {
+func printLintPretty(w io.Writer, rep lint.Report) {
 	if len(rep.Blocked) == 0 && len(rep.Applied) == 0 {
 		fmt.Fprintln(w, "OK: no compatibility / safety findings.")
-		if autoFix {
-			fmt.Fprintf(w, "cleaned_html_size: %d bytes\n", len(rep.CleanedHTML))
-		}
+		fmt.Fprintf(w, "cleaned_html_size: %d bytes\n", len(rep.CleanedHTML))
 		return
 	}
 	if len(rep.Blocked) > 0 {
@@ -199,9 +172,5 @@ func printLintPretty(w io.Writer, rep lint.Report, autoFix bool) {
 			fmt.Fprintf(w, "  - [%s] %s — %s\n", f.RuleID, f.TagOrAttr, f.Hint)
 		}
 	}
-	if autoFix {
-		fmt.Fprintf(w, "cleaned_html_size: %d bytes\n", len(rep.CleanedHTML))
-	} else {
-		fmt.Fprintln(w, "(--auto-fix=false: cleaned_html omitted; rerun without the flag to receive the rewritten HTML)")
-	}
+	fmt.Fprintf(w, "cleaned_html_size: %d bytes\n", len(rep.CleanedHTML))
 }

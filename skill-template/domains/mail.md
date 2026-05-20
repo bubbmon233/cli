@@ -322,15 +322,14 @@ lark-cli mail +send --to alice@example.com --subject '周报' \
 lark-cli mail +reply --message-id <id> --body '收到，谢谢'
 ```
 
-**HTML 写法、风格指引、场景模板请参考三份配套文档：**
+**HTML 写法、风格指引、场景模板请参考两份配套文档：**
 
-- [HTML 兼容白名单](references/lark-mail-html-allowlist.md) — 标签 / class / inline style 速查；表格 / 列表 / 字号 / 引用 / 链接 / 内嵌图片标准写法
-- [飞书原生写法（含风格指引与 3 套完整模板）](references/lark-mail-feishu-native.md) — 通知 / 周报 / 决策请求三套漂亮模板（含问候开场 + 骨架 + 落款），直接替换变量即可使用
-- [`+lint-html` 用法](references/lark-mail-lint-html.md) — 创建草稿前自检 / 修复 AI 输出 / CI 校验静态 HTML 模板
+- [邮件 HTML 写法指南](references/lark-mail-html.md) — 标签 / class / inline style 速查、飞书原生写法（含风格指引）、完整场景模板（通知 / 周报 / 决策请求）；表格 / 列表 / 字号 / 引用 / 链接 / 内嵌图片标准写法都在这里
+- [`+lint-html` 用法](references/lark-mail-lint-html.md) — 创建草稿前自检 / 修复 AI 输出
 
 ### 邮件风格规范
 
-写信时必须遵守的文风底线（详见 [飞书原生写法](references/lark-mail-feishu-native.md)）：
+写信时必须遵守的文风底线（详见 [邮件 HTML 写法指南](references/lark-mail-html.md)）：
 
 - **禁机械编号**：用 `<ul>` / `<ol>` 表达列表，不要用 "一、二、三" / "①②③" / "1) 2) 3)"
 - **emoji 克制**：emoji 仅作状态标签（⏰紧急 / ✅完成 / ⚠️风险），不要在正文段落里堆 emoji 装饰
@@ -353,7 +352,7 @@ lark-cli mail +reply --message-id <id> --body '收到，谢谢'
 - 警告（`<font>` / `<center>` / `<marquee>`）会被**自动修复**为飞书原生写法
 - 不允许的 CSS property（`position` / `z-index` / `transform` 等）会从 inline `style` 里删除
 
-stdout 永远输出结构化 lint 报告，即使无改动也是空数组：
+默认 envelope 只携带必要字段；加 `--show-lint-details` 后会同时输出两个 Finding 数组（无违规时是空数组），方便调用方调试：
 
 ```json
 {
@@ -366,7 +365,7 @@ stdout 永远输出结构化 lint 报告，即使无改动也是空数组：
     ],
     "original_blocked": [
       {"rule_id": "TAG_SCRIPT_BLOCKED", "severity": "error", "tag_or_attr": "script",
-       "excerpt": "<script...>", "hint": "已整段删除（XSS 风险，服务端 RemoteSanitizer 必拒）"}
+       "excerpt": "<script...>", "hint": "已整段删除（XSS 风险）"}
     ]
   }
 }

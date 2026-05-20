@@ -13,6 +13,7 @@ import (
 	"github.com/larksuite/cli/shortcuts/common"
 	draftpkg "github.com/larksuite/cli/shortcuts/mail/draft"
 	"github.com/larksuite/cli/shortcuts/mail/emlbuilder"
+	"github.com/larksuite/cli/shortcuts/mail/lint"
 )
 
 // draftCreateInput bundles all +draft-create user flags into a single
@@ -44,7 +45,8 @@ var MailDraftCreate = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "to", Desc: "Optional. Full To recipient list. Separate multiple addresses with commas. Display-name format is supported. When omitted, the draft is created without recipients (they can be added later via +draft-edit)."},
 		{Name: "subject", Desc: "Final draft subject. Pass the full subject you want to appear in the draft. Required unless --template-id supplies a non-empty subject."},
-		{Name: "body", Desc: "Full email body. Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --plain-text to force plain-text mode. Required unless --template-id supplies a non-empty body."},
+		{Name: "body", Desc: "Full email body. Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file. Required unless --template-id supplies a non-empty body."},
+		bodyFileFlag,
 		{Name: "from", Desc: "Optional. Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. If omitted, the mailbox's primary address is used."},
 		{Name: "mailbox", Desc: "Optional. Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
 		{Name: "cc", Desc: "Optional. Full Cc recipient list. Separate multiple addresses with commas. Display-name format is supported."},
@@ -83,11 +85,17 @@ var MailDraftCreate = common.Shortcut{
 			return err
 		}
 		hasTemplate := runtime.Str("template-id") != ""
+		bodyFlag := runtime.Str("body")
+		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
+		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
+			return err
+		}
 		if !hasTemplate && strings.TrimSpace(runtime.Str("subject")) == "" {
 			return output.ErrValidation("--subject is required; pass the final email subject (or use --template-id)")
 		}
-		if !hasTemplate && strings.TrimSpace(runtime.Str("body")) == "" {
-			return output.ErrValidation("--body is required; pass the full email body (or use --template-id)")
+		if !hasTemplate && bodyEmpty && bodyFile == "" {
+			return output.ErrValidation("--body or --body-file is required; pass the full email body (or use --template-id)")
 		}
 		if err := validateSignatureWithPlainText(runtime.Bool("plain-text"), runtime.Str("signature-id")); err != nil {
 			return err
@@ -95,7 +103,13 @@ var MailDraftCreate = common.Shortcut{
 		if err := validateEventFlags(runtime); err != nil {
 			return err
 		}
-		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), runtime.Str("body")); err != nil {
+		// Resolve the body (reading --body-file if set) so the inline /
+		// HTML check sees the real body, not an empty placeholder.
+		body, bErr := resolveDraftCreateBody(runtime)
+		if bErr != nil {
+			return bErr
+		}
+		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), body); err != nil {
 			return err
 		}
 		return validatePriorityFlag(runtime)
@@ -106,10 +120,14 @@ var MailDraftCreate = common.Shortcut{
 			return err
 		}
 		mailboxID := resolveComposeMailboxID(runtime)
+		body, bErr := resolveDraftCreateBody(runtime)
+		if bErr != nil {
+			return bErr
+		}
 		input := draftCreateInput{
 			To:        runtime.Str("to"),
 			Subject:   runtime.Str("subject"),
-			Body:      runtime.Str("body"),
+			Body:      body,
 			From:      runtime.Str("from"),
 			CC:        runtime.Str("cc"),
 			BCC:       runtime.Str("bcc"),
@@ -202,6 +220,20 @@ var MailDraftCreate = common.Shortcut{
 	},
 }
 
+// resolveDraftCreateBody returns the body content from --body or --body-file.
+// Validate has already enforced mutual exclusion, so exactly one is set
+// (or neither when --template-id is used).
+func resolveDraftCreateBody(runtime *common.RuntimeContext) (string, error) {
+	if body := runtime.Str("body"); strings.TrimSpace(body) != "" {
+		return body, nil
+	}
+	path := strings.TrimSpace(runtime.Str("body-file"))
+	if path == "" {
+		return "", nil // neither set; template-id case
+	}
+	return readBodyFile(runtime.FileIO(), path)
+}
+
 // buildRawEMLForDraftCreate assembles a base64url-encoded EML for the
 // +draft-create shortcut. It resolves the sender from runtime / input,
 // validates recipient counts, applies signature templates, resolves local
@@ -225,7 +257,7 @@ func buildRawEMLForDraftCreate(
 	mailboxID, templateID string,
 	templateInlineAttachments []templateInlineRef,
 	templateSmallAttachments []templateAttachmentRef,
-) (rawEMLOut string, lintApplied, lintBlocked []lintFinding, err error) {
+) (rawEMLOut string, lintApplied, lintBlocked []lint.Finding, err error) {
 	// Initialise lint findings as empty (non-nil) slices so callers can
 	// surface them through the envelope unconditionally even on the
 	// plain-text branch (spec §4.3).

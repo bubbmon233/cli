@@ -46,6 +46,13 @@ const (
 	RuleStyleBlockquoteNative = "STYLE_BLOCKQUOTE_NATIVE_INLINE_APPLIED"
 	RuleStyleLinkNative       = "STYLE_LINK_NATIVE_INLINE_APPLIED"
 	RuleStyleParaWrapper      = "STYLE_PARA_WRAPPER_REWRITTEN"
+
+	// RuleListDirectChildNonLI fires when a <ul> or <ol> has a non-<li>
+	// element child (e.g. nested <ul><ul>). HTML spec requires list children
+	// to be <li>; browsers silently hoist the nested list out and the visual
+	// nesting falls apart. The lib autofixes by wrapping the offending child
+	// in a synthetic <li>.
+	RuleListDirectChildNonLI = "LIST_DIRECT_CHILD_NON_LI"
 )
 
 // Tag classification ----------------------------------------------------------
@@ -157,8 +164,7 @@ func classifyTag(tag string) (kind, ruleID string) {
 		return "warn", id
 	}
 	// Unknown / niche tags: pass through silently. The cli's existing
-	// `htmlTagRe` (mail_quote.go:333) tolerates them too, and the server-side
-	// RemoteSanitizer will remove anything risky regardless. Users authoring
+	// `htmlTagRe` (mail_quote.go:333) tolerates them too. Users authoring
 	// HTML in Feishu native classes (`adit-html-block*`, `history-quote-*`,
 	// `lark-mail-doc-quote`) hit this path — they MUST pass through unchanged
 	// so reply / forward quote markup survives lint round-trips. (Spec §4.4

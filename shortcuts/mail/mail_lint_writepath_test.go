@@ -4,6 +4,7 @@
 package mail
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -38,21 +39,27 @@ func TestRunWritePathLint_PlainTextReturnsEmptyReport(t *testing.T) {
 	}
 }
 
-// TestRunWritePathLint_HTMLAlwaysAutofixesNeverStrict verifies the writing
-// path uses {AutoFix: true, Strict: false} — strict warnings would block
-// users on legitimate <font> tags, which spec §4.3 forbids.
-func TestRunWritePathLint_HTMLAlwaysAutofixesNeverStrict(t *testing.T) {
+// TestRunWritePathLint_HTMLAlwaysAutofixedWarningNeverElevated verifies the
+// writing path always autofixes warnings and never elevates them — the
+// writing-path safety contract has no opt-out (spec §4.3). The input
+// triggers two warning autofixes (<p> paragraph-rewrite + <font> tag
+// rewrite); both must surface in `Applied` and never appear in `Blocked`.
+func TestRunWritePathLint_HTMLAlwaysAutofixedWarningNeverElevated(t *testing.T) {
 	cleaned, rep := runWritePathLint(`<p><font color="red">x</font></p>`)
 	if !strings.Contains(cleaned, "<span") {
 		t.Errorf("expected autofix to rewrite <font>, cleaned=%q", cleaned)
 	}
-	if len(rep.Applied) != 1 {
-		t.Errorf("expected 1 warning surfaced, got %d", len(rep.Applied))
+	if strings.Contains(cleaned, "<p>") || strings.Contains(cleaned, "<font") {
+		t.Errorf("expected <p>/<font> rewritten, cleaned=%q", cleaned)
 	}
-	// In strict mode the warning would be in Blocked instead. Confirm the
-	// writing-path path does NOT promote.
+	if len(rep.Applied) < 1 {
+		t.Errorf("expected ≥1 warning surfaced (font + paragraph autofix), got %d", len(rep.Applied))
+	}
+	// Warnings never become errors on the writing-path; --strict no longer
+	// exists at the surface either, so the contract is "Applied gathers
+	// warnings, Blocked stays empty for warning-only inputs".
 	if len(rep.Blocked) != 0 {
-		t.Errorf("writing-path must NOT use strict; expected 0 blocked, got %d", len(rep.Blocked))
+		t.Errorf("writing-path must NOT elevate warnings; expected 0 blocked, got %d", len(rep.Blocked))
 	}
 }
 
@@ -403,4 +410,310 @@ func mustDecodeRawEMLFromStub(t *testing.T, stub *httpmock.Stub) string {
 
 func jsonUnmarshal(b []byte, v interface{}) error {
 	return jsonDecoderUnmarshal(b, v)
+}
+
+// =====================================================================
+// End-to-end coverage for the 5 other compose shortcuts. Each test feeds
+// HTML containing a <font> tag (warning-tier autofix target) through the
+// shortcut and asserts (a) the EML sent on the wire has the <font>
+// rewritten to <span>, and (b) the envelope honours `--show-lint-details`.
+// =====================================================================
+
+// stubSourceMessageHTML registers a minimal source-message GET stub that
+// `+reply` / `+reply-all` / `+forward` use to derive the parent message
+// headers + body. The original body is plain HTML so the reply lint path
+// is exercised on the user-authored body only (the writing-path contract:
+// quoted block is never re-linted).
+func stubSourceMessageHTML(reg *httpmock.Registry, bodyHTML string) {
+	reg.Register(&httpmock.Stub{
+		URL: "/user_mailboxes/me/profile",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"primary_email_address": "me@example.com",
+			},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		URL: "/user_mailboxes/me/messages/msg_w1",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"message": map[string]interface{}{
+					"message_id":      "msg_w1",
+					"thread_id":       "thread_w1",
+					"smtp_message_id": "<msg_w1@example.com>",
+					"subject":         "Original",
+					"head_from":       map[string]interface{}{"mail_address": "sender@example.com", "name": "Sender"},
+					"to":              []map[string]interface{}{{"mail_address": "me@example.com", "name": "Me"}},
+					"cc":              []interface{}{},
+					"bcc":             []interface{}{},
+					"body_html":       base64URLEncode(bodyHTML),
+					"body_plain_text": base64URLEncode("plain"),
+					"internal_date":   "1704067200000",
+					"attachments":     []map[string]interface{}{},
+				},
+			},
+		},
+	})
+}
+
+// base64URLEncode wraps encoding/base64.URLEncoding.EncodeToString to keep
+// the new tests readable inline.
+func base64URLEncode(s string) string {
+	return base64.URLEncoding.EncodeToString([]byte(s))
+}
+
+// TestMailSend_WritePathLintAutofixesFontInEML drives +send end-to-end with
+// HTML containing a <font> tag and asserts the body in the captured EML has
+// been rewritten to <span> before the drafts.create POST.
+func TestMailSend_WritePathLintAutofixesFontInEML(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+	registerMailboxProfileMock(reg)
+	stub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "d_send"},
+		},
+	}
+	reg.Register(stub)
+
+	err := runMountedMailShortcut(t, MailSend, []string{
+		"+send",
+		"--to", "alice@example.com",
+		"--subject", "Send",
+		"--body", `<font color="red">payload</font>`,
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+
+	captured := mustDecodeRawEMLFromStub(t, stub)
+	if strings.Contains(captured, "<font") {
+		t.Errorf("+send writing-path should rewrite <font>, EML still has it: %q", captured)
+	}
+	if !strings.Contains(captured, "<span") {
+		t.Errorf("expected <span> in EML, got %q", captured)
+	}
+
+	data := decodeShortcutEnvelopeData(t, stdout)
+	la, ok := data["lint_applied"].([]interface{})
+	if !ok {
+		t.Fatalf("lint_applied missing or wrong type: %T", data["lint_applied"])
+	}
+	if len(la) < 1 {
+		t.Errorf("expected ≥1 lint_applied entry, got %d", len(la))
+	}
+}
+
+// TestMailReply_WritePathLintAutofixesFontInEML drives +reply end-to-end.
+func TestMailReply_WritePathLintAutofixesFontInEML(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+	stubSourceMessageHTML(reg, `<p>Original</p>`)
+	stub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "d_reply"},
+		},
+	}
+	reg.Register(stub)
+
+	err := runMountedMailShortcut(t, MailReply, []string{
+		"+reply",
+		"--message-id", "msg_w1",
+		"--body", `<font color="red">reply text</font>`,
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("reply failed: %v", err)
+	}
+
+	captured := mustDecodeRawEMLFromStub(t, stub)
+	if strings.Contains(captured, "<font") {
+		t.Errorf("+reply writing-path should rewrite <font>, EML still has it: %q", captured)
+	}
+	if !strings.Contains(captured, "<span") {
+		t.Errorf("expected <span> in EML, got %q", captured)
+	}
+
+	data := decodeShortcutEnvelopeData(t, stdout)
+	if _, present := data["lint_applied"]; !present {
+		t.Error("lint_applied should appear under --show-lint-details")
+	}
+}
+
+// TestMailReplyAll_WritePathLintAutofixesFontInEML drives +reply-all e2e.
+func TestMailReplyAll_WritePathLintAutofixesFontInEML(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+	stubSourceMessageHTML(reg, `<p>Original</p>`)
+	stub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "d_replyall"},
+		},
+	}
+	reg.Register(stub)
+
+	err := runMountedMailShortcut(t, MailReplyAll, []string{
+		"+reply-all",
+		"--message-id", "msg_w1",
+		"--body", `<font color="red">reply-all text</font>`,
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("reply-all failed: %v", err)
+	}
+
+	captured := mustDecodeRawEMLFromStub(t, stub)
+	if strings.Contains(captured, "<font") {
+		t.Errorf("+reply-all writing-path should rewrite <font>, EML still has it: %q", captured)
+	}
+	if !strings.Contains(captured, "<span") {
+		t.Errorf("expected <span> in EML, got %q", captured)
+	}
+}
+
+// TestMailForward_WritePathLintAutofixesFontInEML drives +forward e2e.
+func TestMailForward_WritePathLintAutofixesFontInEML(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+	stubSourceMessageHTML(reg, `<p>Original</p>`)
+	stub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "d_forward"},
+		},
+	}
+	reg.Register(stub)
+
+	err := runMountedMailShortcut(t, MailForward, []string{
+		"+forward",
+		"--message-id", "msg_w1",
+		"--to", "bob@example.com",
+		"--body", `<font color="red">forward note</font>`,
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("forward failed: %v", err)
+	}
+
+	captured := mustDecodeRawEMLFromStub(t, stub)
+	if strings.Contains(captured, "<font") {
+		t.Errorf("+forward writing-path should rewrite <font>, EML still has it: %q", captured)
+	}
+	if !strings.Contains(captured, "<span") {
+		t.Errorf("expected <span> in EML, got %q", captured)
+	}
+}
+
+// TestMailDraftEdit_WritePathLintAutofixesFontViaBodyFlag verifies the
+// `--body` shortcut on +draft-edit (which lowers to a set_body patch op)
+// runs the writing-path lint before PUT-ing the updated EML.
+func TestMailDraftEdit_WritePathLintAutofixesFontViaBodyFlag(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+
+	// drafts.get(format=raw) returns a minimal multipart EML so the parser
+	// has a body to patch.
+	originalEML := "MIME-Version: 1.0\r\n" +
+		"From: me@example.com\r\n" +
+		"To: alice@example.com\r\n" +
+		"Subject: Edit\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n" +
+		"\r\n" +
+		"<p>original body</p>\r\n"
+	reg.Register(&httpmock.Stub{
+		URL: "/user_mailboxes/me/drafts/d_edit",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"draft_id": "d_edit",
+				"raw":      base64URLEncode(originalEML),
+			},
+		},
+	})
+	stub := &httpmock.Stub{
+		Method: "PUT",
+		URL:    "/user_mailboxes/me/drafts/d_edit",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "d_edit"},
+		},
+	}
+	reg.Register(stub)
+
+	err := runMountedMailShortcut(t, MailDraftEdit, []string{
+		"+draft-edit",
+		"--draft-id", "d_edit",
+		"--body", `<font color="red">new body</font>`,
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("draft-edit failed: %v", err)
+	}
+
+	captured := mustDecodeRawEMLFromStub(t, stub)
+	if strings.Contains(captured, "<font") {
+		t.Errorf("+draft-edit writing-path should rewrite <font>, EML still has it: %q", captured)
+	}
+	if !strings.Contains(captured, "<span") {
+		t.Errorf("expected <span> in EML, got %q", captured)
+	}
+
+	data := decodeShortcutEnvelopeData(t, stdout)
+	if _, present := data["lint_applied"]; !present {
+		t.Error("lint_applied should appear under --show-lint-details on +draft-edit")
+	}
+}
+
+// TestMailDraftCreate_PlainTextShowLintDetailsEmitsEmptyArrays locks the
+// 2×2 corner: plain-text body + --show-lint-details. The envelope must
+// surface the two contract arrays as empty (non-nil) slices because the
+// detail flag toggles their presence; the plain-text branch produces zero
+// findings but the keys must still appear so consumers can rely on them
+// unconditionally (spec §4.3).
+func TestMailDraftCreate_PlainTextShowLintDetailsEmitsEmptyArrays(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	chdirTemp(t)
+	registerMailboxProfileMock(reg)
+	registerDraftCreateOK(reg)
+
+	err := runMountedMailShortcut(t, MailDraftCreate, []string{
+		"+draft-create",
+		"--to", "alice@example.com",
+		"--subject", "Plain",
+		"--body", "plain text body, no html",
+		"--plain-text",
+		"--show-lint-details",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := decodeShortcutEnvelopeData(t, stdout)
+	la, ok := data["lint_applied"].([]interface{})
+	if !ok {
+		t.Fatalf("lint_applied missing or wrong type on plain-text + show-lint-details: %T", data["lint_applied"])
+	}
+	if len(la) != 0 {
+		t.Errorf("plain-text body should produce 0 lint_applied entries, got %d", len(la))
+	}
+	ob, ok := data["original_blocked"].([]interface{})
+	if !ok {
+		t.Fatalf("original_blocked missing or wrong type: %T", data["original_blocked"])
+	}
+	if len(ob) != 0 {
+		t.Errorf("plain-text body should produce 0 original_blocked entries, got %d", len(ob))
+	}
 }

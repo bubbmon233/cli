@@ -35,7 +35,8 @@ var MailDraftEdit = common.Shortcut{
 		{Name: "set-to", Desc: "Replace the entire To recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
 		{Name: "set-cc", Desc: "Replace the entire Cc recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
 		{Name: "set-bcc", Desc: "Replace the entire Bcc recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
-		{Name: "body", Desc: "Full email body for a complete replacement (set_body). Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --patch-file with set_reply_body when you need to preserve an existing reply/forward quote block; use --body when you want a full body replacement. Cannot be combined with --patch-file body ops."},
+		{Name: "body", Desc: "Full email body for a complete replacement (set_body). Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --patch-file with set_reply_body when you need to preserve an existing reply/forward quote block; use --body when you want a full body replacement. Mutually exclusive with --body-file. Cannot be combined with --patch-file body ops."},
+		bodyFileFlag,
 		{Name: "patch-file", Desc: "Edit entry point for body edits, incremental recipient changes, header edits, attachment changes, or inline-image changes. All body edits MUST go through --patch-file. Two body ops: set_body (full replacement including quote) and set_reply_body (replaces only user-authored content, auto-preserves quote block). Run --inspect first to check has_quoted_content, then --print-patch-template for the JSON structure. Relative path only."},
 		{Name: "print-patch-template", Type: "bool", Desc: "Print the JSON template and supported operations for the --patch-file flag. Recommended first step before generating a patch file. No draft read or write is performed."},
 		{Name: "set-priority", Desc: "Set email priority: high, normal, low. Setting 'normal' removes any existing priority header."},
@@ -403,13 +404,26 @@ func buildDraftEditPatch(runtime *common.RuntimeContext) (draftpkg.Patch, error)
 	setRecipients("cc", runtime.Str("set-cc"))
 	setRecipients("bcc", runtime.Str("set-bcc"))
 
-	// --body is a convenience shorthand for a set_body patch op. It cannot be
-	// combined with --patch-file body ops (set_body / set_reply_body) to avoid
-	// ambiguous ordering.
-	if bodyVal := runtime.Str("body"); bodyVal != "" {
+	// --body / --body-file are convenience shorthands for a set_body patch
+	// op. They cannot be combined with --patch-file body ops
+	// (set_body / set_reply_body) to avoid ambiguous ordering.
+	bodyFlag := runtime.Str("body")
+	bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+	if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
+		return patch, err
+	}
+	bodyVal := bodyFlag
+	if bodyVal == "" && bodyFile != "" {
+		loaded, err := readBodyFile(runtime.FileIO(), bodyFile)
+		if err != nil {
+			return patch, err
+		}
+		bodyVal = loaded
+	}
+	if bodyVal != "" {
 		for _, op := range patch.Ops {
 			if op.Op == "set_body" || op.Op == "set_reply_body" {
-				return patch, output.ErrValidation("--body and --patch-file body ops (set_body/set_reply_body) are mutually exclusive; use one or the other")
+				return patch, output.ErrValidation("--body / --body-file and --patch-file body ops (set_body/set_reply_body) are mutually exclusive; use one or the other")
 			}
 		}
 		patch.Ops = append(patch.Ops, draftpkg.PatchOp{Op: "set_body", Value: bodyVal})

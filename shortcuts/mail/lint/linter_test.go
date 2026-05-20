@@ -51,7 +51,7 @@ func TestRun_AllowedTagsPassThrough(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rep := Run(tc.html, Options{AutoFix: true})
+			rep := Run(tc.html, Options{})
 			if len(rep.Blocked) != 0 {
 				t.Errorf("expected no errors, got %d: %+v", len(rep.Blocked), rep.Blocked)
 			}
@@ -91,7 +91,7 @@ func TestRun_AllowedStylePropertiesPassThrough(t *testing.T) {
 	for _, prop := range allowed {
 		t.Run(prop, func(t *testing.T) {
 			html := `<p style="` + prop + `">x</p>`
-			rep := Run(html, Options{AutoFix: true})
+			rep := Run(html, Options{})
 			for _, f := range rep.Applied {
 				if f.RuleID == RuleStylePropertyDropped {
 					t.Errorf("property %q unexpectedly dropped: %+v", prop, f)
@@ -110,7 +110,7 @@ func TestRun_AllowedStylePropertiesPassThrough(t *testing.T) {
 func TestRun_FontTagAutofixedToSpan(t *testing.T) {
 	// Use <div> wrapper to avoid the Feishu-native paragraph autofix
 	// firing alongside the <font> rewrite.
-	rep := Run(`<div><font color="red">x</font></div>`, Options{AutoFix: true})
+	rep := Run(`<div><font color="red">x</font></div>`, Options{})
 	if len(rep.Applied) != 1 {
 		t.Fatalf("expected 1 warning, got %d: %+v", len(rep.Applied), rep.Applied)
 	}
@@ -131,7 +131,7 @@ func TestRun_FontTagAutofixedToSpan(t *testing.T) {
 
 // TestRun_FontTagSizeMappedToPx checks legacy <font size="N"> → font-size:Npx.
 func TestRun_FontTagSizeMappedToPx(t *testing.T) {
-	rep := Run(`<font size="3">x</font>`, Options{AutoFix: true})
+	rep := Run(`<font size="3">x</font>`, Options{})
 	if !strings.Contains(rep.CleanedHTML, "font-size:16px") {
 		t.Errorf("expected size=3 → 16px, cleaned=%q", rep.CleanedHTML)
 	}
@@ -139,7 +139,7 @@ func TestRun_FontTagSizeMappedToPx(t *testing.T) {
 
 // TestRun_CenterTagAutofixedToDiv verifies <center> → <div text-align:center>.
 func TestRun_CenterTagAutofixedToDiv(t *testing.T) {
-	rep := Run(`<center>x</center>`, Options{AutoFix: true})
+	rep := Run(`<center>x</center>`, Options{})
 	if len(rep.Applied) != 1 {
 		t.Fatalf("expected 1 warning, got %d", len(rep.Applied))
 	}
@@ -157,7 +157,7 @@ func TestRun_CenterTagAutofixedToDiv(t *testing.T) {
 // TestRun_MarqueeBlinkCollapseToSpan verifies <marquee>/<blink> → <span>.
 func TestRun_MarqueeBlinkCollapseToSpan(t *testing.T) {
 	for _, tag := range []string{"marquee", "blink"} {
-		rep := Run("<"+tag+">x</"+tag+">", Options{AutoFix: true})
+		rep := Run("<"+tag+">x</"+tag+">", Options{})
 		if len(rep.Applied) != 1 {
 			t.Errorf("[%s] expected 1 warning, got %d", tag, len(rep.Applied))
 			continue
@@ -168,52 +168,24 @@ func TestRun_MarqueeBlinkCollapseToSpan(t *testing.T) {
 	}
 }
 
-// TestRun_WarningWithAutoFixFalseKeepsOriginalMarkup verifies that
-// AutoFix=false surfaces the warning but does NOT rewrite the input.
-func TestRun_WarningWithAutoFixFalseKeepsOriginalMarkup(t *testing.T) {
-	rep := Run(`<font color="red">x</font>`, Options{AutoFix: false})
-	if len(rep.Applied) != 1 {
-		t.Fatalf("expected 1 warning, got %d", len(rep.Applied))
-	}
-	if !strings.Contains(rep.CleanedHTML, "<font") {
-		t.Errorf("expected <font> preserved when AutoFix=false, cleaned=%q", rep.CleanedHTML)
-	}
-}
-
-// TestRun_StrictPromotesWarningsToErrors verifies that Strict=true upgrades
-// warnings to errors (used by `+lint-html --strict`).
-func TestRun_StrictPromotesWarningsToErrors(t *testing.T) {
-	rep := Run(`<font color="red">x</font>`, Options{AutoFix: true, Strict: true})
-	if len(rep.Blocked) != 1 {
-		t.Fatalf("expected 1 error, got %d", len(rep.Blocked))
-	}
-	if rep.Blocked[0].Severity != SeverityError {
-		t.Errorf("severity = %s, want error", rep.Blocked[0].Severity)
-	}
-}
-
 // =====================================================================
 // Tier 3 — error / delete tags (spec §4.4 row "错误（删除）").
 // =====================================================================
 
 // TestRun_ScriptTagBlocked checks that <script> is removed unconditionally.
 func TestRun_ScriptTagBlocked(t *testing.T) {
-	for _, autoFix := range []bool{true, false} {
-		t.Run("autofix-"+boolStr(autoFix), func(t *testing.T) {
-			rep := Run(`<p>safe</p><script>alert(1)</script><p>after</p>`, Options{AutoFix: autoFix})
-			if len(rep.Blocked) != 1 {
-				t.Fatalf("expected 1 blocked finding, got %d", len(rep.Blocked))
-			}
-			if rep.Blocked[0].RuleID != RuleTagScriptBlocked {
-				t.Errorf("rule = %s, want %s", rep.Blocked[0].RuleID, RuleTagScriptBlocked)
-			}
-			if strings.Contains(rep.CleanedHTML, "<script") || strings.Contains(rep.CleanedHTML, "alert(1)") {
-				t.Errorf("<script> content should be deleted, cleaned=%q", rep.CleanedHTML)
-			}
-			if !strings.Contains(rep.CleanedHTML, "safe") || !strings.Contains(rep.CleanedHTML, "after") {
-				t.Errorf("surrounding content lost, cleaned=%q", rep.CleanedHTML)
-			}
-		})
+	rep := Run(`<p>safe</p><script>alert(1)</script><p>after</p>`, Options{})
+	if len(rep.Blocked) != 1 {
+		t.Fatalf("expected 1 blocked finding, got %d", len(rep.Blocked))
+	}
+	if rep.Blocked[0].RuleID != RuleTagScriptBlocked {
+		t.Errorf("rule = %s, want %s", rep.Blocked[0].RuleID, RuleTagScriptBlocked)
+	}
+	if strings.Contains(rep.CleanedHTML, "<script") || strings.Contains(rep.CleanedHTML, "alert(1)") {
+		t.Errorf("<script> content should be deleted, cleaned=%q", rep.CleanedHTML)
+	}
+	if !strings.Contains(rep.CleanedHTML, "safe") || !strings.Contains(rep.CleanedHTML, "after") {
+		t.Errorf("surrounding content lost, cleaned=%q", rep.CleanedHTML)
 	}
 }
 
@@ -230,7 +202,7 @@ func TestRun_BlockedTagsRemoved(t *testing.T) {
 	}
 	for input, wantRule := range cases {
 		t.Run(input[:min(len(input), 30)], func(t *testing.T) {
-			rep := Run(input, Options{AutoFix: true})
+			rep := Run(input, Options{})
 			found := false
 			for _, f := range rep.Blocked {
 				if f.RuleID == wantRule {
@@ -248,7 +220,7 @@ func TestRun_BlockedTagsRemoved(t *testing.T) {
 // TestRun_EventHandlerAttrBlocked verifies on*-handlers are stripped (spec
 // §4.4 — "属性 on*（onclick 等）").
 func TestRun_EventHandlerAttrBlocked(t *testing.T) {
-	rep := Run(`<p onclick="alert(1)" id="ok">x</p>`, Options{AutoFix: true})
+	rep := Run(`<p onclick="alert(1)" id="ok">x</p>`, Options{})
 	if len(rep.Blocked) != 1 {
 		t.Fatalf("expected 1 blocked finding, got %d", len(rep.Blocked))
 	}
@@ -265,7 +237,7 @@ func TestRun_EventHandlerAttrBlocked(t *testing.T) {
 
 // TestRun_OnErrorAttrBlocked tests one of the more common XSS vectors.
 func TestRun_OnErrorAttrBlocked(t *testing.T) {
-	rep := Run(`<img src="cid:x" onerror="alert(1)">`, Options{AutoFix: true})
+	rep := Run(`<img src="cid:x" onerror="alert(1)">`, Options{})
 	hasErr := false
 	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrEventHandlerBlocked && f.TagOrAttr == "onerror" {
@@ -283,7 +255,7 @@ func TestRun_OnErrorAttrBlocked(t *testing.T) {
 
 // TestRun_JavaScriptURLBlocked verifies javascript: hrefs are stripped.
 func TestRun_JavaScriptURLBlocked(t *testing.T) {
-	rep := Run(`<a href="javascript:alert(1)">click</a>`, Options{AutoFix: true})
+	rep := Run(`<a href="javascript:alert(1)">click</a>`, Options{})
 	hasErr := false
 	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrJSURLBlocked {
@@ -300,7 +272,7 @@ func TestRun_JavaScriptURLBlocked(t *testing.T) {
 
 // TestRun_VBScriptURLBlocked verifies vbscript: is rejected.
 func TestRun_VBScriptURLBlocked(t *testing.T) {
-	rep := Run(`<a href="vbscript:msgbox 1">x</a>`, Options{AutoFix: true})
+	rep := Run(`<a href="vbscript:msgbox 1">x</a>`, Options{})
 	if len(rep.Blocked) == 0 {
 		t.Errorf("expected vbscript: to be blocked, got 0 findings")
 	}
@@ -309,7 +281,7 @@ func TestRun_VBScriptURLBlocked(t *testing.T) {
 // TestRun_DataNonImageURLBlocked verifies data:text/html is rejected
 // (only data:image/* is allowed per spec §4.4).
 func TestRun_DataNonImageURLBlocked(t *testing.T) {
-	rep := Run(`<img src="data:text/html,<script>1</script>">`, Options{AutoFix: true})
+	rep := Run(`<img src="data:text/html,<script>1</script>">`, Options{})
 	if len(rep.Blocked) == 0 {
 		t.Errorf("expected data:text/html to be blocked")
 	}
@@ -317,7 +289,7 @@ func TestRun_DataNonImageURLBlocked(t *testing.T) {
 
 // TestRun_DataImageAllowed verifies data:image/png passes.
 func TestRun_DataImageAllowed(t *testing.T) {
-	rep := Run(`<img src="data:image/png;base64,iVBORw0KGg=">`, Options{AutoFix: true})
+	rep := Run(`<img src="data:image/png;base64,iVBORw0KGg=">`, Options{})
 	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrJSURLBlocked {
 			t.Errorf("data:image/* should pass, got %+v", f)
@@ -327,7 +299,7 @@ func TestRun_DataImageAllowed(t *testing.T) {
 
 // TestRun_RelativeURLAllowed verifies relative URLs (no scheme) pass.
 func TestRun_RelativeURLAllowed(t *testing.T) {
-	rep := Run(`<img src="./local.png"><a href="/path">x</a>`, Options{AutoFix: true})
+	rep := Run(`<img src="./local.png"><a href="/path">x</a>`, Options{})
 	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrJSURLBlocked || f.RuleID == RuleAttrUnsafeSchemeBlocked {
 			t.Errorf("relative URL should pass, got %+v", f)
@@ -341,7 +313,7 @@ func TestRun_RelativeURLAllowed(t *testing.T) {
 
 // TestRun_StylePropertyDropped verifies non-allow-list properties drop.
 func TestRun_StylePropertyDropped(t *testing.T) {
-	rep := Run(`<p style="color:red; position:absolute; z-index:99">x</p>`, Options{AutoFix: true})
+	rep := Run(`<p style="color:red; position:absolute; z-index:99">x</p>`, Options{})
 	dropped := []string{}
 	for _, f := range rep.Applied {
 		if f.RuleID == RuleStylePropertyDropped {
@@ -364,7 +336,7 @@ func TestRun_StylePropertyDropped(t *testing.T) {
 
 // TestRun_StyleBorderPrefixAllowed verifies the border-* prefix rule.
 func TestRun_StyleBorderPrefixAllowed(t *testing.T) {
-	rep := Run(`<p style="border-top:1px; border-bottom-color:red; border-radius:4px">x</p>`, Options{AutoFix: true})
+	rep := Run(`<p style="border-top:1px; border-bottom-color:red; border-radius:4px">x</p>`, Options{})
 	for _, f := range rep.Applied {
 		if f.RuleID == RuleStylePropertyDropped {
 			t.Errorf("border-* should pass, got %+v", f)
@@ -381,7 +353,7 @@ func TestRun_StyleBorderPrefixAllowed(t *testing.T) {
 // and missed the shorthand form, causing 24px indents to be reset to 0.
 func TestRun_FeishuListShorthandMarginPreserved(t *testing.T) {
 	in := `<ul style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside" data-list-bullet="true"><li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;list-style-type:circle;font-size:14px" dir="auto"><span style="font-family:inherit"><span style="color:rgb(0,0,0)">indented</span></span></li></ul>`
-	rep := Run(in, Options{AutoFix: true})
+	rep := Run(in, Options{})
 	cleaned := rep.CleanedHTML
 	// Extract just the <ul ...> opening tag's style attr (li has its own
 	// independent margin-left:0 longhand which is correct — list indent
@@ -412,7 +384,7 @@ func TestRun_EmptyArraysAlwaysPresent(t *testing.T) {
 	// Use <div> instead of <p> to avoid the Feishu-native paragraph
 	// rewrite autofix, which would surface a finding even on otherwise
 	// clean input.
-	rep := Run(`<div>nothing here</div>`, Options{AutoFix: true})
+	rep := Run(`<div>nothing here</div>`, Options{})
 	if rep.Applied == nil || rep.Blocked == nil {
 		t.Errorf("Applied/Blocked must be non-nil; got applied=%v blocked=%v", rep.Applied, rep.Blocked)
 	}
@@ -440,7 +412,7 @@ func TestEmptyReport_HasContractFields(t *testing.T) {
 // the parser doesn't accidentally lose user content.
 func TestRun_CleanedHTMLPreservesStructure(t *testing.T) {
 	html := `<div style="line-height:1.6"><h3>title</h3><p>body <b>bold</b> end</p><ul><li>a</li><li>b</li></ul></div>`
-	rep := Run(html, Options{AutoFix: true})
+	rep := Run(html, Options{})
 	if len(rep.Blocked) != 0 {
 		t.Fatalf("unexpected blocked: %+v", rep.Blocked)
 	}
@@ -455,7 +427,7 @@ func TestRun_CleanedHTMLPreservesStructure(t *testing.T) {
 
 // TestRun_EmptyInput verifies the lib short-circuits cleanly on empty input.
 func TestRun_EmptyInput(t *testing.T) {
-	rep := Run("", Options{AutoFix: true})
+	rep := Run("", Options{})
 	if rep.CleanedHTML != "" {
 		t.Errorf("CleanedHTML = %q, want empty", rep.CleanedHTML)
 	}
@@ -466,11 +438,11 @@ func TestRun_EmptyInput(t *testing.T) {
 
 // TestRun_HasErrorFindingsFlag verifies the flag tracks blocked findings.
 func TestRun_HasErrorFindingsFlag(t *testing.T) {
-	rep := Run(`<script>x</script>`, Options{AutoFix: true})
+	rep := Run(`<script>x</script>`, Options{})
 	if !rep.HasErrorFindings {
 		t.Error("expected HasErrorFindings=true")
 	}
-	clean := Run(`<p>safe</p>`, Options{AutoFix: true})
+	clean := Run(`<p>safe</p>`, Options{})
 	if clean.HasErrorFindings {
 		t.Error("expected HasErrorFindings=false on clean HTML")
 	}
@@ -478,7 +450,7 @@ func TestRun_HasErrorFindingsFlag(t *testing.T) {
 
 // TestRun_HasWarningFindingsFlag verifies the flag tracks warnings.
 func TestRun_HasWarningFindingsFlag(t *testing.T) {
-	rep := Run(`<font color="red">x</font>`, Options{AutoFix: true})
+	rep := Run(`<font color="red">x</font>`, Options{})
 	if !rep.HasWarningFindings {
 		t.Error("expected HasWarningFindings=true")
 	}
@@ -504,7 +476,7 @@ func TestTruncateExcerpt_RespectsCap(t *testing.T) {
 // produces a short excerpt (envelope size protection).
 func TestRun_ExcerptCappedForLargeOffender(t *testing.T) {
 	bigAttr := strings.Repeat("a", MaxExcerptBytes*2)
-	rep := Run(`<a href="javascript:`+bigAttr+`">x</a>`, Options{AutoFix: true})
+	rep := Run(`<a href="javascript:`+bigAttr+`">x</a>`, Options{})
 	if len(rep.Blocked) == 0 {
 		t.Fatal("expected blocked finding")
 	}
@@ -518,13 +490,6 @@ func TestRun_ExcerptCappedForLargeOffender(t *testing.T) {
 // =====================================================================
 // Helpers.
 // =====================================================================
-
-func boolStr(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
-}
 
 func sliceContains(haystack []string, needle string) bool {
 	for _, s := range haystack {
@@ -575,7 +540,7 @@ func TestMapFontSize_ExhaustiveSpan(t *testing.T) {
 // TestRun_FontTagWithFaceMappedToFontFamily ensures <font face="..."> →
 // font-family inline style.
 func TestRun_FontTagWithFaceMappedToFontFamily(t *testing.T) {
-	rep := Run(`<font face="Arial">x</font>`, Options{AutoFix: true})
+	rep := Run(`<font face="Arial">x</font>`, Options{})
 	if !strings.Contains(rep.CleanedHTML, "font-family:Arial") {
 		t.Errorf("expected font-family preserved, cleaned=%q", rep.CleanedHTML)
 	}
@@ -584,7 +549,7 @@ func TestRun_FontTagWithFaceMappedToFontFamily(t *testing.T) {
 // TestRun_FontTagWithExistingStyleMerged ensures distillation merges with an
 // existing style attribute on the same element.
 func TestRun_FontTagWithExistingStyleMerged(t *testing.T) {
-	rep := Run(`<font color="red" style="line-height:1.6">x</font>`, Options{AutoFix: true})
+	rep := Run(`<font color="red" style="line-height:1.6">x</font>`, Options{})
 	if !strings.Contains(rep.CleanedHTML, "line-height:1.6") {
 		t.Errorf("expected line-height retained, cleaned=%q", rep.CleanedHTML)
 	}
@@ -595,7 +560,7 @@ func TestRun_FontTagWithExistingStyleMerged(t *testing.T) {
 
 // TestRun_CenterTagWithExistingStyleMerged ensures <center>'s style merge.
 func TestRun_CenterTagWithExistingStyleMerged(t *testing.T) {
-	rep := Run(`<center style="line-height:1.6">x</center>`, Options{AutoFix: true})
+	rep := Run(`<center style="line-height:1.6">x</center>`, Options{})
 	if !strings.Contains(rep.CleanedHTML, "text-align:center") {
 		t.Errorf("expected text-align:center, cleaned=%q", rep.CleanedHTML)
 	}
@@ -606,7 +571,7 @@ func TestRun_CenterTagWithExistingStyleMerged(t *testing.T) {
 
 // TestRun_MarqueeRetainsClassAndID verifies marquee → span keeps class/id.
 func TestRun_MarqueeRetainsClassAndID(t *testing.T) {
-	rep := Run(`<marquee class="cls" id="x" direction="left">y</marquee>`, Options{AutoFix: true})
+	rep := Run(`<marquee class="cls" id="x" direction="left">y</marquee>`, Options{})
 	if !strings.Contains(rep.CleanedHTML, `class="cls"`) {
 		t.Errorf("expected class preserved, cleaned=%q", rep.CleanedHTML)
 	}
@@ -616,47 +581,27 @@ func TestRun_MarqueeRetainsClassAndID(t *testing.T) {
 }
 
 // TestRun_UnknownSchemeWarning verifies an unknown URL scheme produces a
-// warning (not an error) and is dropped only when AutoFix is true.
+// warning (not an error) and the attribute is dropped.
 func TestRun_UnknownSchemeWarning(t *testing.T) {
-	t.Run("autofix-true drops attr", func(t *testing.T) {
-		rep := Run(`<a href="webcal://x">x</a>`, Options{AutoFix: true})
-		gotWarn := false
-		for _, f := range rep.Applied {
-			if f.RuleID == RuleAttrUnsafeSchemeBlocked {
-				gotWarn = true
-			}
+	rep := Run(`<a href="webcal://x">x</a>`, Options{})
+	gotWarn := false
+	for _, f := range rep.Applied {
+		if f.RuleID == RuleAttrUnsafeSchemeBlocked {
+			gotWarn = true
 		}
-		if !gotWarn {
-			t.Errorf("expected ATTR_UNSAFE_SCHEME_BLOCKED warning, got %+v", rep.Applied)
-		}
-		if strings.Contains(rep.CleanedHTML, "webcal:") {
-			t.Errorf("expected unknown scheme stripped under AutoFix, cleaned=%q", rep.CleanedHTML)
-		}
-	})
-	t.Run("autofix-false keeps attr", func(t *testing.T) {
-		rep := Run(`<a href="webcal://x">x</a>`, Options{AutoFix: false})
-		if !strings.Contains(rep.CleanedHTML, "webcal:") {
-			t.Errorf("expected unknown scheme kept under AutoFix=false, cleaned=%q", rep.CleanedHTML)
-		}
-	})
-	t.Run("strict promotes warning", func(t *testing.T) {
-		rep := Run(`<a href="webcal://x">x</a>`, Options{AutoFix: true, Strict: true})
-		gotErr := false
-		for _, f := range rep.Blocked {
-			if f.RuleID == RuleAttrUnsafeSchemeBlocked {
-				gotErr = true
-			}
-		}
-		if !gotErr {
-			t.Errorf("expected unsafe-scheme to be promoted to error in strict, got %+v", rep.Blocked)
-		}
-	})
+	}
+	if !gotWarn {
+		t.Errorf("expected ATTR_UNSAFE_SCHEME_BLOCKED warning, got %+v", rep.Applied)
+	}
+	if strings.Contains(rep.CleanedHTML, "webcal:") {
+		t.Errorf("expected unknown scheme stripped, cleaned=%q", rep.CleanedHTML)
+	}
 }
 
 // TestRun_WhitespaceObfuscatedJavaScriptScheme verifies "java\tscript:..."
 // is still caught after control-byte stripping in classifyURLValue.
 func TestRun_WhitespaceObfuscatedJavaScriptScheme(t *testing.T) {
-	rep := Run("<a href=\"java\tscript:alert(1)\">x</a>", Options{AutoFix: true})
+	rep := Run("<a href=\"java\tscript:alert(1)\">x</a>", Options{})
 	gotErr := false
 	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrJSURLBlocked {
@@ -670,7 +615,7 @@ func TestRun_WhitespaceObfuscatedJavaScriptScheme(t *testing.T) {
 
 // TestRun_FileSchemeBlocked verifies file: URLs are rejected.
 func TestRun_FileSchemeBlocked(t *testing.T) {
-	rep := Run(`<a href="file:///etc/passwd">x</a>`, Options{AutoFix: true})
+	rep := Run(`<a href="file:///etc/passwd">x</a>`, Options{})
 	if len(rep.Blocked) == 0 {
 		t.Error("expected file: to be blocked")
 	}
@@ -679,7 +624,7 @@ func TestRun_FileSchemeBlocked(t *testing.T) {
 // TestRun_StyleMalformedDeclarationDropped verifies a property without a
 // colon delimiter is treated as malformed and dropped.
 func TestRun_StyleMalformedDeclarationDropped(t *testing.T) {
-	rep := Run(`<p style="color:red; malformed; line-height:1.6">x</p>`, Options{AutoFix: true})
+	rep := Run(`<p style="color:red; malformed; line-height:1.6">x</p>`, Options{})
 	gotMalformed := false
 	for _, f := range rep.Applied {
 		if f.RuleID == RuleStylePropertyDropped && f.TagOrAttr == "style.malformed" {
@@ -699,34 +644,16 @@ func TestRun_StyleMalformedDeclarationDropped(t *testing.T) {
 func TestRun_StyleAllPropertiesDroppedRemovesAttribute(t *testing.T) {
 	// Use <div> to avoid the Feishu-native paragraph autofix, which adds
 	// a fresh style attribute on the rewritten outer wrapper.
-	rep := Run(`<div style="position:absolute; z-index:99">x</div>`, Options{AutoFix: true})
+	rep := Run(`<div style="position:absolute; z-index:99">x</div>`, Options{})
 	if strings.Contains(rep.CleanedHTML, "style=") {
 		t.Errorf("style attribute should be removed when all props invalid, cleaned=%q", rep.CleanedHTML)
-	}
-}
-
-// TestRun_StyleAttrAutoFixFalseKeepsOriginal verifies AutoFix=false keeps
-// the original style attribute even when properties would have been dropped.
-func TestRun_StyleAttrAutoFixFalseKeepsOriginal(t *testing.T) {
-	rep := Run(`<p style="position:absolute; color:red">x</p>`, Options{AutoFix: false})
-	gotDropped := false
-	for _, f := range rep.Applied {
-		if f.RuleID == RuleStylePropertyDropped {
-			gotDropped = true
-		}
-	}
-	if !gotDropped {
-		t.Errorf("expected drop finding for AutoFix=false, got %+v", rep.Applied)
-	}
-	if !strings.Contains(rep.CleanedHTML, "position:") {
-		t.Errorf("expected original style preserved under AutoFix=false, cleaned=%q", rep.CleanedHTML)
 	}
 }
 
 // TestRun_StyleEmptyValuePassThrough verifies an empty style attr passes.
 func TestRun_StyleEmptyValuePassThrough(t *testing.T) {
 	// Use <div> to avoid the Feishu-native paragraph autofix.
-	rep := Run(`<div style="">x</div>`, Options{AutoFix: true})
+	rep := Run(`<div style="">x</div>`, Options{})
 	if len(rep.Applied) != 0 {
 		t.Errorf("empty style attr should not produce findings, got %+v", rep.Applied)
 	}
@@ -742,7 +669,7 @@ func TestRun_HintsForAllBlockedTags(t *testing.T) {
 		`<meta name="x">`, `<base href="x">`,
 	}
 	for _, html := range cases {
-		rep := Run(html, Options{AutoFix: true})
+		rep := Run(html, Options{})
 		for _, f := range rep.Blocked {
 			if f.Hint == "" {
 				t.Errorf("blocked rule %s missing hint for %q", f.RuleID, html)
@@ -758,7 +685,7 @@ func TestRun_HintsForAllWarnTags(t *testing.T) {
 		`<marquee>x</marquee>`, `<blink>x</blink>`,
 	}
 	for _, html := range cases {
-		rep := Run(html, Options{AutoFix: true})
+		rep := Run(html, Options{})
 		for _, f := range rep.Applied {
 			if f.Hint == "" {
 				t.Errorf("warn rule %s missing hint for %q", f.RuleID, html)
@@ -859,7 +786,7 @@ func TestIsEventHandlerAttr_Coverage(t *testing.T) {
 // TestRun_ParseFailureFallsBackGracefully verifies extreme malformed input
 // short-circuits to EmptyReport.
 func TestRun_PlainTextInputProducesNoFindings(t *testing.T) {
-	rep := Run("just a plain string with no markup", Options{AutoFix: true})
+	rep := Run("just a plain string with no markup", Options{})
 	if len(rep.Blocked) != 0 || len(rep.Applied) != 0 {
 		t.Errorf("plain text should produce no findings, got %+v %+v", rep.Blocked, rep.Applied)
 	}
@@ -869,7 +796,7 @@ func TestRun_PlainTextInputProducesNoFindings(t *testing.T) {
 func TestRun_MultipleErrorsAccumulate(t *testing.T) {
 	html := `<script>1</script><iframe></iframe><a href="javascript:0">x</a>` +
 		`<form></form><p onclick="">y</p>`
-	rep := Run(html, Options{AutoFix: true})
+	rep := Run(html, Options{})
 	if len(rep.Blocked) < 4 {
 		t.Errorf("expected ≥4 errors, got %d: %+v", len(rep.Blocked), rep.Blocked)
 	}
@@ -878,7 +805,7 @@ func TestRun_MultipleErrorsAccumulate(t *testing.T) {
 // TestRun_NestedStructurePreserved verifies deep nesting passes through.
 func TestRun_NestedStructurePreserved(t *testing.T) {
 	html := `<div><div><div><p><span><b>deep</b></span></p></div></div></div>`
-	rep := Run(html, Options{AutoFix: true})
+	rep := Run(html, Options{})
 	if len(rep.Blocked) != 0 {
 		t.Errorf("nested allowed tags should pass, got %+v", rep.Blocked)
 	}
@@ -891,11 +818,47 @@ func TestRun_NestedStructurePreserved(t *testing.T) {
 // blocked tag inside an allowed parent leaves the parent intact.
 func TestRun_BlockedInsideAllowedRemovedNotParent(t *testing.T) {
 	html := `<div>before<script>1</script>after</div>`
-	rep := Run(html, Options{AutoFix: true})
+	rep := Run(html, Options{})
 	if !strings.Contains(rep.CleanedHTML, "before") || !strings.Contains(rep.CleanedHTML, "after") {
 		t.Errorf("parent text should survive, cleaned=%q", rep.CleanedHTML)
 	}
 	if strings.Contains(rep.CleanedHTML, "<script") {
 		t.Errorf("script should be removed, cleaned=%q", rep.CleanedHTML)
+	}
+}
+
+// TestRun_ListDirectChildNonLIWrapped verifies that a <ul><ul> nested
+// directly without an <li> wrapper triggers LIST_DIRECT_CHILD_NON_LI and
+// the inner <ul> ends up wrapped in a synthetic <li>. Same for <ol><ol>.
+func TestRun_ListDirectChildNonLIWrapped(t *testing.T) {
+	cases := []struct {
+		name string
+		html string
+	}{
+		{"ul wraps ul", `<ul><ul><li>x</li></ul></ul>`},
+		{"ol wraps ol", `<ol><ol><li>x</li></ol></ol>`},
+		{"ul wraps div", `<ul><div>orphan</div><li>real</li></ul>`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := Run(tc.html, Options{})
+			gotRule := false
+			for _, f := range rep.Applied {
+				if f.RuleID == RuleListDirectChildNonLI {
+					gotRule = true
+					break
+				}
+			}
+			if !gotRule {
+				t.Errorf("expected LIST_DIRECT_CHILD_NON_LI, got %+v", rep.Applied)
+			}
+			// The cleaned HTML should not have a direct ul>ul or ol>ol or
+			// ul>div sequence anymore.
+			if strings.Contains(rep.CleanedHTML, "<ul><ul") ||
+				strings.Contains(rep.CleanedHTML, "<ol><ol") ||
+				strings.Contains(rep.CleanedHTML, "<ul><div") {
+				t.Errorf("expected synthetic <li> wrapper, cleaned=%q", rep.CleanedHTML)
+			}
+		})
 	}
 }

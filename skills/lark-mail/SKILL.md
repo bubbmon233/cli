@@ -101,7 +101,7 @@ metadata:
 4. **回复** — `+reply` / `+reply-all`（默认存草稿，加 `--confirm-send` 则立即发送）
 5. **转发** — `+forward`（默认存草稿，加 `--confirm-send` 则立即发送）
 6. **新邮件** — `+send` 存草稿（默认），加 `--confirm-send` 发送
-7. **HTML body 预检（可选）** — 复杂 HTML body 提交前可先跑 `+lint-html --strict` 看 lint 会改 / 删什么；写信路径（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）已内置 autofix，普通正文不必先跑。详见后文「写入路径内置 HTML lint」节
+7. **HTML body 预检（可选）** — 复杂 HTML body 提交前可先跑 `+lint-html` 看 lint 会改 / 删什么；写信路径（`+send` / `+draft-create` / `+reply` / `+reply-all` / `+forward` / `+draft-edit` body op）已内置 autofix，普通正文不必先跑。详见 [references/lark-mail-html.md](references/lark-mail-html.md) 中的「写入路径内置 HTML lint」章节
 8. **确认投递** — 立即发送后用 `send_status` 查询投递状态，定时发送后在预定时间后再查询；取消定时发送用 `cancel_scheduled_send`
 9. **编辑草稿** — `+draft-edit` 修改已有草稿。正文编辑通过 `--patch-file`：回复/转发草稿用 `set_reply_body` op 保留引用区，普通草稿用 `set_body` op
 10. **已读回执** —

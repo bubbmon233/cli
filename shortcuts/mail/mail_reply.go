@@ -27,7 +27,8 @@ var MailReply = common.Shortcut{
 	HasFormat:   true,
 	Flags: []common.Flag{
 		{Name: "message-id", Desc: "Required. Message ID to reply to", Required: true},
-		{Name: "body", Desc: "Reply body. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the reply body and the original message. Use --plain-text to force plain-text mode. Required unless --template-id supplies a non-empty body."},
+		{Name: "body", Desc: "Reply body. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the reply body and the original message. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file. Required unless --template-id supplies a non-empty body."},
+		bodyFileFlag,
 		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to the mailbox's primary address."},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
 		{Name: "to", Desc: "Additional To address(es), comma-separated (appended to original sender's address)"},
@@ -72,8 +73,14 @@ var MailReply = common.Shortcut{
 			return err
 		}
 		hasTemplate := runtime.Str("template-id") != ""
-		if !hasTemplate && strings.TrimSpace(runtime.Str("body")) == "" {
-			return output.ErrValidation("--body is required; pass the reply body (or use --template-id)")
+		bodyFlag := runtime.Str("body")
+		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
+		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
+			return err
+		}
+		if !hasTemplate && bodyEmpty && bodyFile == "" {
+			return output.ErrValidation("--body or --body-file is required; pass the reply body (or use --template-id)")
 		}
 		if err := validateConfirmSendScope(runtime); err != nil {
 			return err
@@ -97,7 +104,10 @@ var MailReply = common.Shortcut{
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		messageId := runtime.Str("message-id")
-		body := runtime.Str("body")
+		body, bErr := resolveBodyFromFlags(runtime)
+		if bErr != nil {
+			return bErr
+		}
 		toFlag := runtime.Str("to")
 		ccFlag := runtime.Str("cc")
 		bccFlag := runtime.Str("bcc")
@@ -269,10 +279,9 @@ var MailReply = common.Shortcut{
 			}
 			// Writing-path lint (spec §4.3): operate on the user-authored body
 			// + signature ONLY — NOT on `quoted` (the <blockquote> derived from
-			// the original message). The original HTML already passed through
-			// the server-side RemoteSanitizer upstream; double-sanitising risks
-			// dropping legitimate Lark quote markup such as adit-html-block*
-			// / history-quote-* / lark-mail-doc-quote (S2 contract «Sibling-
+			// the original message). Double-sanitising risks dropping
+			// legitimate Lark quote markup such as adit-html-block* /
+			// history-quote-* / lark-mail-doc-quote (S2 contract «Sibling-
 			// divergence ledger» / spec §4.4 row "通过").
 			cleaned, rep := runWritePathLint(bodyWithSig)
 			bodyWithSig = cleaned

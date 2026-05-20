@@ -30,7 +30,8 @@ var MailForward = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "message-id", Desc: "Required. Message ID to forward", Required: true},
 		{Name: "to", Desc: "Recipient email address(es), comma-separated"},
-		{Name: "body", Desc: "Body prepended before the forwarded message. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the forward body and the original message. Use --plain-text to force plain-text mode."},
+		{Name: "body", Desc: "Body prepended before the forwarded message. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the forward body and the original message. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file."},
+		bodyFileFlag,
 		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to the mailbox's primary address."},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
 		{Name: "cc", Desc: "CC email address(es), comma-separated"},
@@ -74,6 +75,11 @@ var MailForward = common.Shortcut{
 		if err := validateTemplateID(runtime.Str("template-id")); err != nil {
 			return err
 		}
+		bodyFlag := runtime.Str("body")
+		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
+			return err
+		}
 		if err := validateConfirmSendScope(runtime); err != nil {
 			return err
 		}
@@ -104,7 +110,10 @@ var MailForward = common.Shortcut{
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		messageId := runtime.Str("message-id")
 		to := runtime.Str("to")
-		body := runtime.Str("body")
+		body, bErr := resolveBodyFromFlags(runtime)
+		if bErr != nil {
+			return bErr
+		}
 		ccFlag := runtime.Str("cc")
 		bccFlag := runtime.Str("bcc")
 		plainText := runtime.Bool("plain-text")

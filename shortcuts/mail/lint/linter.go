@@ -20,13 +20,9 @@ import (
 // representation must not be size-amplifying.
 const MaxExcerptBytes = 200
 
-// Run lints the given HTML body and returns a structured Report. When
-// opts.AutoFix is true, Report.CleanedHTML contains the rewritten HTML
-// (warnings rewritten + errors deleted); when false, only error-tier findings
-// are removed (writing-path safety floor cannot be opted out of), warnings
-// are surfaced as observations only, and CleanedHTML still contains the
-// rewritten HTML — but `+lint-html --auto-fix=false` callers are expected to
-// drop this field from the public envelope per spec §4.2.
+// Run lints the given HTML body and returns a structured Report.
+// Report.CleanedHTML contains the rewritten HTML (warnings rewritten + errors
+// deleted) — the autofix is unconditional.
 //
 // IMPORTANT: when the input is empty or plain-text (no HTML markup detected
 // by the cli's existing `bodyIsHTML` heuristic), callers should short-circuit
@@ -66,8 +62,14 @@ func Run(html string, opts Options) Report {
 		root.AppendChild(n)
 	}
 
-	walk(root, &rep, opts)
-	applyFeishuNativeStyles(root, &rep, opts)
+	walk(root, &rep)
+	// nativeCtx tracks per-Run() state so positional ids (e.g. data-ol-id)
+	// are deterministic across multiple Run() calls on the same input —
+	// keying off the document-traversal order rather than heap pointers,
+	// so cleaned_html is byte-stable and amenable to golden-file tests / CI
+	// diff / cache-key reuse.
+	nctx := &nativeCtx{olIDs: map[*xhtml.Node]string{}}
+	applyFeishuNativeStyles(root, &rep, nctx)
 
 	rep.HasErrorFindings = len(rep.Blocked) > 0
 	rep.HasWarningFindings = len(rep.Applied) > 0
@@ -84,19 +86,19 @@ func Run(html string, opts Options) Report {
 // parser's typical nesting depth (≤ 256 by default) is well below Go's
 // goroutine stack limit; the existing draft package's plainTextFromHTML
 // (mail/draft/htmltext.go) similarly recurses for the same reason.
-func walk(parent *xhtml.Node, rep *Report, opts Options) {
+func walk(parent *xhtml.Node, rep *Report) {
 	child := parent.FirstChild
 	for child != nil {
 		next := child.NextSibling
 		if child.Type == xhtml.ElementNode {
-			processElement(parent, child, rep, opts)
+			processElement(parent, child, rep)
 		}
 		// child may have been removed/replaced by processElement; recurse
 		// only if it still has the original parent (i.e. wasn't deleted).
 		// The html parser sets Parent on every node, so a removed-then-
 		// reattached node still recurses correctly via its new Parent.
 		if child.Parent != nil {
-			walk(child, rep, opts)
+			walk(child, rep)
 		}
 		child = next
 	}
@@ -106,7 +108,7 @@ func walk(parent *xhtml.Node, rep *Report, opts Options) {
 //  1. tag → allow / warn-rewrite / error-delete
 //  2. attributes → on*-handlers, URL-bearing attrs (scheme allow-list),
 //     style attribute (CSS property allow-list)
-func processElement(parent, n *xhtml.Node, rep *Report, opts Options) {
+func processElement(parent, n *xhtml.Node, rep *Report) {
 	tagName := strings.ToLower(n.Data)
 	kind, ruleID := classifyTag(tagName)
 
@@ -119,49 +121,23 @@ func processElement(parent, n *xhtml.Node, rep *Report, opts Options) {
 			Excerpt:   excerptOf(n),
 			Hint:      hintForBlockedTag(tagName),
 		})
-		// Always remove blocked tags regardless of opts.AutoFix — writing-path
-		// safety floor cannot be opted out of (spec §4.3 — `--no-lint` is not
-		// provided).
+		// Always remove blocked tags — writing-path safety floor cannot be
+		// opted out of (spec §4.3 — `--no-lint` is not provided).
 		parent.RemoveChild(n)
 		return
 
 	case "warn":
-		// AutoFix=true → rewrite (e.g. <font>→<span style>); AutoFix=false →
-		// surface the finding as observation only, keep the original tag.
-		// `+lint-html --auto-fix=false` consumers want to see what would
-		// change without the lib forcing the change.
-		if opts.AutoFix {
-			finding := Finding{
-				RuleID:    ruleID,
-				Severity:  SeverityWarning,
-				TagOrAttr: tagName,
-				Excerpt:   excerptOf(n),
-				Hint:      hintForWarnTag(tagName),
-			}
-			if opts.Strict {
-				finding.Severity = SeverityError
-				rep.Blocked = append(rep.Blocked, finding)
-			} else {
-				rep.Applied = append(rep.Applied, finding)
-			}
-			rewriteWarnTag(n, tagName)
-			// Recurse into the rewritten node by falling through; the
-			// rewrite preserved children as-is.
-		} else {
-			finding := Finding{
-				RuleID:    ruleID,
-				Severity:  SeverityWarning,
-				TagOrAttr: tagName,
-				Excerpt:   excerptOf(n),
-				Hint:      hintForWarnTag(tagName),
-			}
-			if opts.Strict {
-				finding.Severity = SeverityError
-				rep.Blocked = append(rep.Blocked, finding)
-			} else {
-				rep.Applied = append(rep.Applied, finding)
-			}
-		}
+		// Always rewrite (e.g. <font>→<span style>) and surface the finding.
+		rep.Applied = append(rep.Applied, Finding{
+			RuleID:    ruleID,
+			Severity:  SeverityWarning,
+			TagOrAttr: tagName,
+			Excerpt:   excerptOf(n),
+			Hint:      hintForWarnTag(tagName),
+		})
+		rewriteWarnTag(n, tagName)
+		// Recurse into the rewritten node by falling through; the rewrite
+		// preserved children as-is.
 		// fall through to attribute scan
 	case "allow":
 		// no-op
@@ -170,7 +146,7 @@ func processElement(parent, n *xhtml.Node, rep *Report, opts Options) {
 	// Attribute scan: build a new attribute slice, dropping/sanitising as we
 	// go and surfacing findings.
 	if len(n.Attr) > 0 {
-		processAttributes(n, rep, opts)
+		processAttributes(n, rep)
 	}
 }
 
@@ -182,7 +158,7 @@ func processElement(parent, n *xhtml.Node, rep *Report, opts Options) {
 // Other attributes pass through unchanged. The cli's existing
 // `validateInlineCIDs` (helpers.go:2226) handles `cid:`-specific checks; the
 // lint must not duplicate that responsibility (S2 contract «MUST reuse» row).
-func processAttributes(n *xhtml.Node, rep *Report, opts Options) {
+func processAttributes(n *xhtml.Node, rep *Report) {
 	keep := n.Attr[:0]
 	for _, attr := range n.Attr {
 		name := strings.ToLower(attr.Key)
@@ -204,34 +180,25 @@ func processAttributes(n *xhtml.Node, rep *Report, opts Options) {
 			kind, ruleID := classifyURLValue(attr.Val)
 			switch kind {
 			case "error":
-				severity := SeverityError
 				rep.Blocked = append(rep.Blocked, Finding{
 					RuleID:    ruleID,
-					Severity:  severity,
+					Severity:  SeverityError,
 					TagOrAttr: name,
 					Excerpt:   truncateExcerpt(attr.Key + "=\"" + attr.Val + "\""),
 					Hint:      "Removed dangerous URL scheme (allowed: http/https/mailto/cid/data:image/*)",
 				})
 				continue
 			case "warn":
-				finding := Finding{
+				rep.Applied = append(rep.Applied, Finding{
 					RuleID:    ruleID,
 					Severity:  SeverityWarning,
 					TagOrAttr: name,
 					Excerpt:   truncateExcerpt(attr.Key + "=\"" + attr.Val + "\""),
 					Hint:      "URL scheme not in allowlist (allowed: http/https/mailto/cid/data:image/*)",
-				}
-				if opts.Strict {
-					finding.Severity = SeverityError
-					rep.Blocked = append(rep.Blocked, finding)
-				} else {
-					rep.Applied = append(rep.Applied, finding)
-				}
-				if opts.AutoFix {
-					// Drop the attribute when AutoFix is set — writing-path
-					// safety floor (the URL would not render correctly anyway).
-					continue
-				}
+				})
+				// Always drop the attribute — writing-path safety floor (the
+				// URL would not render correctly anyway).
+				continue
 			}
 		}
 
@@ -248,13 +215,9 @@ func processAttributes(n *xhtml.Node, rep *Report, opts Options) {
 				})
 			}
 			if len(dropped) == 0 {
-				attr.Val = cleaned
-				keep = append(keep, attr)
-				continue
-			}
-			if !opts.AutoFix {
-				// AutoFix=false: keep the original property list so users see
-				// exactly what would change.
+				// Byte-stable when no property was dropped: leave the
+				// attribute exactly as authored so lint round-trips are
+				// idempotent on clean input.
 				keep = append(keep, attr)
 				continue
 			}
@@ -439,7 +402,7 @@ func sanitiseStyleAttr(raw string) (cleaned string, dropped []string) {
 func hintForBlockedTag(tag string) string {
 	switch tag {
 	case "script":
-		return "Removed whole tag (XSS risk; server-side RemoteSanitizer rejects too)"
+		return "Removed whole tag (XSS risk)"
 	case "iframe", "object", "embed":
 		return "Removed whole tag (external embeds not allowed; use <img> or a body link for rich media)"
 	case "form", "input", "select", "option", "button":
@@ -459,13 +422,13 @@ func hintForBlockedTag(tag string) string {
 func hintForWarnTag(tag string) string {
 	switch tag {
 	case "font":
-		return "Rewritten as <span style=\"...\"> (Lark mail-editor expresses size / color via inline style)"
+		return "Rewritten as <span style=\"...\"> (modern HTML expresses size / color via inline style)"
 	case "center":
 		return "Rewritten as <div style=\"text-align:center\"> (deprecated <center> tag)"
 	case "marquee", "blink":
 		return "Rewritten as <span> (animations not supported; text preserved)"
 	default:
-		return "Rewritten in Lark-native shape"
+		return "Rewritten in modern HTML shape"
 	}
 }
 
@@ -519,7 +482,8 @@ func renderFragment(root *xhtml.Node) string {
 // applyFeishuNativeStyles walks the tree (post-tag-pass) and ensures elements
 // that have known Feishu mail-editor native inline styles get them autofilled.
 // User-supplied inline styles always take precedence — this pass is purely
-// additive (only fills in missing properties). AutoFix=false short-circuits.
+// additive (only fills in missing properties). The pass always runs; there
+// is no opt-out.
 //
 // Rules (visual parity with Feishu mail-editor's own output, captured from a
 // real mail-editor draft on 2026-05-07):
@@ -539,19 +503,38 @@ func renderFragment(root *xhtml.Node) string {
 //                     </div>
 //                     This is the only rewrite that changes tree shape; the
 //                     others only touch attributes.
-func applyFeishuNativeStyles(parent *xhtml.Node, rep *Report, opts Options) {
-	if !opts.AutoFix {
-		return
+// nativeCtx accumulates per-Run() state shared across the recursive
+// applyFeishuNativeStyles walk. The only field today is the <ol>→id map
+// used to seed `data-ol-id` deterministically (see nodeShortID).
+type nativeCtx struct {
+	olIDs map[*xhtml.Node]string
+}
+
+// olID returns the deterministic id for the given <ol> node, allocating a
+// fresh positional id on first sight. Each call within the same Run() that
+// targets the same node returns the same id. Different inputs may collide
+// (the map resets per Run()), but `data-ol-id` is per-document so cross-
+// document equality is irrelevant.
+func (c *nativeCtx) olID(n *xhtml.Node) string {
+	if id, ok := c.olIDs[n]; ok {
+		return id
 	}
+	id := nodeShortID(len(c.olIDs))
+	c.olIDs[n] = id
+	return id
+}
+
+func applyFeishuNativeStyles(parent *xhtml.Node, rep *Report, nctx *nativeCtx) {
 	child := parent.FirstChild
 	for child != nil {
 		next := child.NextSibling
 		if child.Type == xhtml.ElementNode {
 			switch strings.ToLower(child.Data) {
 			case "ol", "ul":
+				wrapNonLIListChildren(child, rep)
 				ensureFeishuListStyle(child, rep)
 			case "li":
-				ensureFeishuListItemStyle(child, parent, rep)
+				ensureFeishuListItemStyle(child, parent, rep, nctx)
 			case "blockquote":
 				ensureFeishuBlockquoteStyle(child, rep)
 			case "a":
@@ -563,7 +546,49 @@ func applyFeishuNativeStyles(parent *xhtml.Node, rep *Report, opts Options) {
 		// child may have been mutated (children moved into a wrapper);
 		// recurse only if it's still attached.
 		if child.Parent != nil {
-			applyFeishuNativeStyles(child, rep, opts)
+			applyFeishuNativeStyles(child, rep, nctx)
+		}
+		child = next
+	}
+}
+
+// wrapNonLIListChildren scans the direct children of an <ol>/<ul> and wraps
+// any element that is not <li> in a fresh <li>. HTML spec is explicit that
+// `<ul>` / `<ol>` may only contain `<li>` (plus optional `<script>` /
+// `<template>`); browsers parse a non-<li> child by silently hoisting it out
+// of the list, which destroys the intended visual nesting in mail clients.
+//
+// Whitespace-only text nodes are left in place (they were already going to
+// be stripped by stripWhitespaceTextChildren in ensureFeishuListStyle).
+// Non-element / non-whitespace text nodes are preserved as-is — the spec
+// allows them inside `<li>` only, but most clients render them fine inline
+// and we don't want to silently mutate user-authored content beyond the
+// minimum needed to satisfy the structural rule.
+func wrapNonLIListChildren(list *xhtml.Node, rep *Report) {
+	child := list.FirstChild
+	for child != nil {
+		next := child.NextSibling
+		if child.Type == xhtml.ElementNode && strings.ToLower(child.Data) != "li" {
+			// Wrap the offending element in a fresh <li>. The <li> inherits
+			// no attributes — the wrapped element keeps its own styling so
+			// nested-list indentation declared on the inner <ul>/<ol>
+			// survives. The recursive walk re-enters the new <li> later to
+			// stamp the native list-item style on it.
+			li := &xhtml.Node{
+				Type:     xhtml.ElementNode,
+				Data:     "li",
+				DataAtom: atom.Li,
+			}
+			rep.Applied = append(rep.Applied, Finding{
+				RuleID:    RuleListDirectChildNonLI,
+				Severity:  SeverityWarning,
+				TagOrAttr: child.Data,
+				Excerpt:   excerptOf(child),
+				Hint:      "Wrapped non-<li> child of <" + list.Data + "> in a synthetic <li> (HTML spec requires <ul>/<ol> children to be <li>)",
+			})
+			list.InsertBefore(li, child)
+			list.RemoveChild(child)
+			li.AppendChild(child)
 		}
 		child = next
 	}
@@ -805,14 +830,15 @@ func ensureClass(n *xhtml.Node, cls string) bool {
 }
 
 // ensureFeishuListStyle adds Feishu-native inline styles + the data-list-*
-// marker that the Feishu mail-editor renderer keys off to recognise the
-// list as a native list-block (vs. a fallback ad-hoc list with default
-// browser styling and the visual "blank line between items" issue).
+// marker that the renderer keys off to recognise the list as a native
+// list-block (vs. a fallback ad-hoc list with default browser styling and
+// the visual "blank line between items" issue).
 //
-// For <ol>, also seeds `start="1"` (when absent) and a deterministic
-// `data-ol-id` derived from the node pointer; both are required by Feishu
-// mail-editor to treat the ol as a tracked numbered list. Same id is read
-// by ensureFeishuListItemStyle when stamping each <li> with `data-ol-id`.
+// For <ol>, also seeds `start="1"` (when absent). The `data-ol-id` value
+// is allocated lazily from a per-Run() positional counter held on
+// nativeCtx and stamped on each <li> by ensureFeishuListItemStyle — so
+// identical input HTML always produces identical cleaned_html (byte
+// stable across runs).
 func ensureFeishuListStyle(n *xhtml.Node, rep *Report) {
 	styleChanged := ensureInlineStyleProps(n, [][2]string{
 		{"margin-top", "0px"},
@@ -831,8 +857,8 @@ func ensureFeishuListStyle(n *xhtml.Node, rep *Report) {
 		if ensureAttr(n, "start", "1") {
 			markerChanged = true
 		}
-		// data-ol-id is intentionally NOT set on the <ol> itself —
-		// Feishu mail-editor's own output puts data-ol-id only on <li>
+		// data-ol-id is intentionally NOT set on the <ol> itself — the
+		// mail-editor's own output puts data-ol-id only on <li>
 		// children. Putting it on <ol> too triggers a different
 		// renderer code path that reintroduces inter-item spacing.
 	}
@@ -855,19 +881,20 @@ func ensureFeishuListStyle(n *xhtml.Node, rep *Report) {
 			Severity:  SeverityWarning,
 			TagOrAttr: n.Data,
 			Excerpt:   excerptOf(n),
-			Hint:      "Added Lark-native inline style + data-list-* marker + canonical attribute order (lets Lark mail-editor recognise as native list-block, avoiding fallback-render blank lines)",
+			Hint:      "Added native-list inline style + data-list-* marker + canonical attribute order (recognised as native list-block, avoiding fallback-render blank lines)",
 		})
 	}
 }
 
-// nodeShortID generates an 8-char deterministic id from the node's pointer
-// address. Stable for the lifetime of a single Run() call so siblings in
-// the same <ol> get the same id when they read it via parent.Attr; varies
-// between runs because Go's allocator picks fresh addresses, which is
-// fine — `data-ol-id` is per-ol scoped, not per-document.
-func nodeShortID(n *xhtml.Node) string {
+// nodeShortID generates an 8-char deterministic id from the given positional
+// index. Identical input HTML produces identical ids on every Run() call,
+// so the lib is fully byte-stable — golden-file tests, CI diff, downstream
+// caches keyed off cleaned_html all work correctly. The hash is FNV-32a on
+// the index's decimal representation; 32 bits of hash space gives ample
+// margin for a single document's <ol> count.
+func nodeShortID(index int) string {
 	h := fnv.New32a()
-	fmt.Fprintf(h, "%p", n)
+	fmt.Fprintf(h, "%d", index)
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
@@ -885,13 +912,12 @@ func readAttr(n *xhtml.Node, key string) string {
 
 // ensureFeishuListItemStyle adds Feishu-native inline styles + class +
 // data-* marker to <li>. The list-style-type defaults to decimal/disc
-// based on the parent <ol>/<ul> kind; class follows Feishu mail-editor
+// based on the parent <ol>/<ul> kind; class follows mail-editor
 // internal naming (`temp-li number1` for ol-children, `temp-li bullet1`
 // for ul-children). data-li-line / data-list mark the node as part of a
-// native list-block so the mail-editor renderer doesn't fall back to
-// default browser list styling (which has the "blank line between
-// items" visual).
-func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report) {
+// native list-block so the renderer doesn't fall back to default browser
+// list styling (which has the "blank line between items" visual).
+func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report, nctx *nativeCtx) {
 	listType := "disc"
 	listKind := "bullet1"
 	if parent != nil && strings.ToLower(parent.Data) == "ol" {
@@ -931,13 +957,14 @@ func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report) {
 	if ensureAttr(n, "dir", "auto") {
 		markerChanged = true
 	}
-	// For ol-children, derive data-ol-id from parent <ol>'s pointer
-	// (so all siblings under the same <ol> get the same id, but the
-	// <ol> itself stays clean — see ensureFeishuListStyle for why).
-	// data-start is the 1-based position among <li> siblings; it's
-	// what Feishu mail-editor uses to render the visible number prefix.
+	// For ol-children, derive data-ol-id from the parent <ol>'s positional
+	// index (so all siblings under the same <ol> get the same id, but the
+	// <ol> itself stays clean — see ensureFeishuListStyle for why). The
+	// nativeCtx makes this id document-deterministic across multiple
+	// Run() calls on the same input. data-start is the 1-based position
+	// among <li> siblings; it renders the visible number prefix.
 	if parent != nil && strings.ToLower(parent.Data) == "ol" {
-		if ensureAttr(n, "data-ol-id", nodeShortID(parent)) {
+		if ensureAttr(n, "data-ol-id", nctx.olID(parent)) {
 			markerChanged = true
 		}
 		pos := 1
@@ -960,7 +987,7 @@ func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report) {
 			Severity:  SeverityWarning,
 			TagOrAttr: "li",
 			Excerpt:   excerptOf(n),
-			Hint:      "Added Lark-native inline style + class (temp-li " + listKind + ") + data marker + double-span text wrap + canonical attribute order",
+			Hint:      "Added native-list-item inline style + class (temp-li " + listKind + ") + data marker + double-span text wrap + canonical attribute order",
 		})
 	}
 }
@@ -979,7 +1006,7 @@ func ensureFeishuBlockquoteStyle(n *xhtml.Node, rep *Report) {
 			Severity:  SeverityWarning,
 			TagOrAttr: "blockquote",
 			Excerpt:   excerptOf(n),
-			Hint:      "Added Lark-native inline style (2px left grey bar + grey text)",
+			Hint:      "Added blockquote inline style (2px left grey bar + grey text)",
 		})
 	}
 }
@@ -1001,7 +1028,7 @@ func ensureFeishuLinkStyle(n *xhtml.Node, rep *Report) {
 			Severity:  SeverityWarning,
 			TagOrAttr: "a",
 			Excerpt:   excerptOf(n),
-			Hint:      "Added Lark-native link style (class=not-doclink + Lark blue + no underline)",
+			Hint:      "Added link style (class=not-doclink + brand blue + no underline)",
 		})
 	}
 }
@@ -1060,6 +1087,6 @@ func rewritePToFeishuDiv(n *xhtml.Node, rep *Report) {
 		Severity:  SeverityWarning,
 		TagOrAttr: "p",
 		Excerpt:   excerptOf(n),
-		Hint:      "Rewritten as Lark-native double-wrapped div paragraph (outer margin/line-height + inner dir/font-size)",
+		Hint:      "Rewritten as double-wrapped div paragraph (outer margin/line-height + inner dir/font-size)",
 	})
 }

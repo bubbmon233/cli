@@ -30,10 +30,8 @@ var showLintDetailsFlag = common.Flag{
 // use to invoke the lint lib before writing to emlbuilder / draftpkg.Apply.
 //
 // The writing-path safety contract (spec §4.3) is:
-//   - AutoFix is ALWAYS true (no `--no-lint` opt-out); errors are dropped
-//     and warnings are auto-fixed in place.
-//   - Strict is ALWAYS false; warnings never bump the exit code on the
-//     write path (compare with `+lint-html --strict` which is a CI tool).
+//   - The lib always autofixes warnings and removes errors; there is no
+//     opt-out.
 //   - The returned report is appended to the writing-path stdout envelope
 //     under the contract keys `lint_applied` (warnings) and
 //     `original_blocked` (errors); both arrays are always present (possibly
@@ -52,7 +50,7 @@ func runWritePathLint(body string) (cleaned string, rep lint.Report) {
 	if body == "" {
 		return "", lint.EmptyReport("")
 	}
-	rep = lint.Run(body, lint.Options{AutoFix: true, Strict: false})
+	rep = lint.Run(body, lint.Options{})
 	return rep.CleanedHTML, rep
 }
 
@@ -93,12 +91,6 @@ func applyLintToEnvelope(data map[string]interface{}, applied, blocked []lint.Fi
 func emptyLintEnvelopeFields() (lintApplied, originalBlocked []lint.Finding) {
 	return []lint.Finding{}, []lint.Finding{}
 }
-
-// lintFinding aliases the lint package's Finding type for callers that don't
-// want to import shortcuts/mail/lint directly (e.g. function signatures in
-// existing mail_*.go files that want to keep their import set minimal). It is
-// purely a syntactic convenience — both names refer to the same struct.
-type lintFinding = lint.Finding
 
 // emptyLintFindings returns two non-nil empty Finding slices, used by helpers
 // that initialise their outputs before knowing whether the body is HTML.

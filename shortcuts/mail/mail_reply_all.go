@@ -27,7 +27,8 @@ var MailReplyAll = common.Shortcut{
 	HasFormat:   true,
 	Flags: []common.Flag{
 		{Name: "message-id", Desc: "Required. Message ID to reply to all recipients", Required: true},
-		{Name: "body", Desc: "Reply body. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the reply body and the original message. Use --plain-text to force plain-text mode. Required unless --template-id supplies a non-empty body."},
+		{Name: "body", Desc: "Reply body. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the reply body and the original message. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file. Required unless --template-id supplies a non-empty body."},
+		bodyFileFlag,
 		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to the mailbox's primary address."},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
 		{Name: "to", Desc: "Additional To address(es), comma-separated (appended to original recipients)"},
@@ -73,8 +74,14 @@ var MailReplyAll = common.Shortcut{
 			return err
 		}
 		hasTemplate := runtime.Str("template-id") != ""
-		if !hasTemplate && strings.TrimSpace(runtime.Str("body")) == "" {
-			return output.ErrValidation("--body is required; pass the reply body (or use --template-id)")
+		bodyFlag := runtime.Str("body")
+		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
+		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
+		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
+			return err
+		}
+		if !hasTemplate && bodyEmpty && bodyFile == "" {
+			return output.ErrValidation("--body or --body-file is required; pass the reply body (or use --template-id)")
 		}
 		if err := validateConfirmSendScope(runtime); err != nil {
 			return err
@@ -98,7 +105,10 @@ var MailReplyAll = common.Shortcut{
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		messageId := runtime.Str("message-id")
-		body := runtime.Str("body")
+		body, bErr := resolveBodyFromFlags(runtime)
+		if bErr != nil {
+			return bErr
+		}
 		toFlag := runtime.Str("to")
 		ccFlag := runtime.Str("cc")
 		bccFlag := runtime.Str("bcc")
@@ -277,9 +287,8 @@ var MailReplyAll = common.Shortcut{
 			// Writing-path lint: same isomorphic pattern as +reply (spec §4.3,
 			// S2 contract «N-way isomorphism»). Operate on bodyWithSig only;
 			// the `quoted` block from the original message must NOT be re-
-			// linted (it already passed RemoteSanitizer upstream and may
-			// contain Feishu-native quote-block classes that the lint allow-
-			// list intentionally permits in pass-through).
+			// linted (it may contain Feishu-native quote-block classes that
+			// the lint allow-list intentionally permits in pass-through).
 			cleaned, rep := runWritePathLint(bodyWithSig)
 			bodyWithSig = cleaned
 			lintApplied, lintBlocked = rep.Applied, rep.Blocked
