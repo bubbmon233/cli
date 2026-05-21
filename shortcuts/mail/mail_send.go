@@ -111,7 +111,7 @@ var MailSend = common.Shortcut{
 		// `--body-file plain.txt --inline …` combination fail validation
 		// the same way `--body 'plain' --inline …` already does, instead
 		// of silently dropping the inline images at Execute (Major #4).
-		body, bErr := resolveSendBody(runtime)
+		body, bErr := resolveBodyFromFlags(runtime)
 		if bErr != nil {
 			return bErr
 		}
@@ -126,7 +126,7 @@ var MailSend = common.Shortcut{
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		to := runtime.Str("to")
 		subject := runtime.Str("subject")
-		body, err := resolveSendBody(runtime)
+		body, err := resolveBodyFromFlags(runtime)
 		if err != nil {
 			return err
 		}
@@ -335,20 +335,6 @@ var MailSend = common.Shortcut{
 		runtime.Out(out, nil)
 		return nil
 	},
-}
-
-// resolveSendBody returns the email body from --body or --body-file.
-// Validate has already enforced mutual exclusion, so exactly one is set
-// (or neither when --template-id is used).
-func resolveSendBody(runtime *common.RuntimeContext) (string, error) {
-	if body := runtime.Str("body"); strings.TrimSpace(body) != "" {
-		return body, nil
-	}
-	path := strings.TrimSpace(runtime.Str("body-file"))
-	if path == "" {
-		return "", nil // neither set; template-id case
-	}
-	return readBodyFile(runtime.FileIO(), path)
 }
 
 // splitByComma splits a comma-separated string, trimming whitespace from each entry,

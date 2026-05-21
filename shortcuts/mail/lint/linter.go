@@ -188,12 +188,12 @@ func processAttributes(n *xhtml.Node, rep *Report) {
 				})
 				continue
 			case "warn":
-				rep.Applied = append(rep.Applied, Finding{
+				rep.Blocked = append(rep.Blocked, Finding{
 					RuleID:    ruleID,
-					Severity:  SeverityWarning,
+					Severity:  SeverityError,
 					TagOrAttr: name,
 					Excerpt:   truncateExcerpt(attr.Key + "=\"" + attr.Val + "\""),
-					Hint:      "URL scheme not in allowlist (allowed: http/https/mailto/cid/data:image/*)",
+					Hint:      "Removed URL with unrecognised scheme (allowed: http/https/mailto/cid/data:image/*)",
 				})
 				// Always drop the attribute — writing-path safety floor (the
 				// URL would not render correctly anyway).

@@ -105,7 +105,7 @@ var MailDraftCreate = common.Shortcut{
 		}
 		// Resolve the body (reading --body-file if set) so the inline /
 		// HTML check sees the real body, not an empty placeholder.
-		body, bErr := resolveDraftCreateBody(runtime)
+		body, bErr := resolveBodyFromFlags(runtime)
 		if bErr != nil {
 			return bErr
 		}
@@ -120,7 +120,7 @@ var MailDraftCreate = common.Shortcut{
 			return err
 		}
 		mailboxID := resolveComposeMailboxID(runtime)
-		body, bErr := resolveDraftCreateBody(runtime)
+		body, bErr := resolveBodyFromFlags(runtime)
 		if bErr != nil {
 			return bErr
 		}
@@ -218,20 +218,6 @@ var MailDraftCreate = common.Shortcut{
 		})
 		return nil
 	},
-}
-
-// resolveDraftCreateBody returns the body content from --body or --body-file.
-// Validate has already enforced mutual exclusion, so exactly one is set
-// (or neither when --template-id is used).
-func resolveDraftCreateBody(runtime *common.RuntimeContext) (string, error) {
-	if body := runtime.Str("body"); strings.TrimSpace(body) != "" {
-		return body, nil
-	}
-	path := strings.TrimSpace(runtime.Str("body-file"))
-	if path == "" {
-		return "", nil // neither set; template-id case
-	}
-	return readBodyFile(runtime.FileIO(), path)
 }
 
 // buildRawEMLForDraftCreate assembles a base64url-encoded EML for the

@@ -580,18 +580,18 @@ func TestRun_MarqueeRetainsClassAndID(t *testing.T) {
 	}
 }
 
-// TestRun_UnknownSchemeWarning verifies an unknown URL scheme produces a
-// warning (not an error) and the attribute is dropped.
-func TestRun_UnknownSchemeWarning(t *testing.T) {
+// TestRun_UnknownSchemeBlocked verifies an unknown URL scheme produces a
+// blocked (error) finding and the attribute is dropped.
+func TestRun_UnknownSchemeBlocked(t *testing.T) {
 	rep := Run(`<a href="webcal://x">x</a>`, Options{})
-	gotWarn := false
-	for _, f := range rep.Applied {
+	gotBlocked := false
+	for _, f := range rep.Blocked {
 		if f.RuleID == RuleAttrUnsafeSchemeBlocked {
-			gotWarn = true
+			gotBlocked = true
 		}
 	}
-	if !gotWarn {
-		t.Errorf("expected ATTR_UNSAFE_SCHEME_BLOCKED warning, got %+v", rep.Applied)
+	if !gotBlocked {
+		t.Errorf("expected ATTR_UNSAFE_SCHEME_BLOCKED in Blocked, got blocked=%+v applied=%+v", rep.Blocked, rep.Applied)
 	}
 	if strings.Contains(rep.CleanedHTML, "webcal:") {
 		t.Errorf("expected unknown scheme stripped, cleaned=%q", rep.CleanedHTML)
