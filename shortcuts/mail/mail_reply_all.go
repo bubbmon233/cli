@@ -265,7 +265,7 @@ var MailReplyAll = common.Shortcut{
 		var composedHTMLBody string
 		var composedTextBody string
 		var srcInlineBytes int64
-		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		// Lint findings flowing into the writing-path stdout envelope.
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if useHTML {
 			if err := validateInlineImageURLs(sourceMsg); err != nil {
@@ -284,10 +284,9 @@ var MailReplyAll = common.Shortcut{
 			if sigResult != nil {
 				bodyWithSig += draftpkg.SignatureSpacing() + draftpkg.BuildSignatureHTML(sigResult.ID, sigResult.RenderedContent)
 			}
-			// Writing-path lint: same isomorphic pattern as +reply (spec §4.3,
-			// S2 contract «N-way isomorphism»). Operate on bodyWithSig only;
-			// the `quoted` block from the original message must NOT be re-
-			// linted (it may contain Feishu-native quote-block classes that
+			// Writing-path lint: same pattern as +reply — operate on bodyWithSig
+			// only; the `quoted` block from the original message must NOT be
+			// re-linted (it may contain Feishu-native quote-block classes that
 			// the lint allow-list intentionally permits in pass-through).
 			cleaned, rep := runWritePathLint(bodyWithSig)
 			bodyWithSig = cleaned

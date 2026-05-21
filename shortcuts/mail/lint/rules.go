@@ -5,10 +5,9 @@ package lint
 
 import "strings"
 
-// Rule IDs surfaced through Finding.RuleID. UPPER_SNAKE_CASE is the contract
-// (S2 contract «Header / RPC contract» — Stdout envelope contract). New rules
-// MUST keep this naming convention so AI / test consumers can pattern-match
-// reliably.
+// Rule IDs surfaced through Finding.RuleID. UPPER_SNAKE_CASE naming is the
+// contract for the stdout envelope. New rules MUST keep this naming convention
+// so AI / test consumers can pattern-match reliably.
 const (
 	// Tag-level rules.
 	RuleTagFontToSpan      = "TAG_FONT_TO_SPAN"
@@ -57,7 +56,7 @@ const (
 
 // Tag classification ----------------------------------------------------------
 
-// allowedTags enumerates tags that pass through verbatim (spec §4.4 row "通过").
+// allowedTags enumerates tags that pass through verbatim (tag classification row "通过").
 // Lower-case canonical names; the parser normalises tag names so we don't need
 // case-insensitive comparison at lookup time.
 var allowedTags = map[string]bool{
@@ -116,7 +115,7 @@ var allowedTags = map[string]bool{
 }
 
 // blockedTags enumerates tags whose content is removed in full and a
-// SeverityError finding is emitted (spec §4.4 row "错误（删除）"). Each entry
+// SeverityError finding is emitted (tag classification row "错误（删除）"). Each entry
 // maps to the rule id surfaced in Finding.RuleID.
 var blockedTags = map[string]string{
 	"script": RuleTagScriptBlocked,
@@ -133,8 +132,8 @@ var blockedTags = map[string]string{
 	"base":   RuleTagBaseBlocked,
 }
 
-// warnAutofixTags enumerates tags rewritten when AutoFix is true (spec §4.4
-// row "警告 + 自动修复"). The replacement strategy is per-tag (see rewrite.go).
+// warnAutofixTags enumerates tags rewritten when AutoFix is true (tag
+// classification row "警告 + 自动修复"). The replacement strategy is per-tag.
 var warnAutofixTags = map[string]string{
 	"font":    RuleTagFontToSpan,
 	"center":  RuleTagCenterToDiv,
@@ -175,9 +174,9 @@ func classifyTag(tag string) (kind, ruleID string) {
 // Attribute / URL / style classification --------------------------------------
 
 // allowedURLSchemes lists URL schemes that pass through hyperlink-bearing
-// attrs (`href`, `src`, `cite`, `formaction` etc.). Per spec §4.4: http(s),
-// mailto, cid, data:image/* are allowed; everything else (notably javascript:
-// and vbscript:) is blocked. Empty / relative URLs (no scheme) are always
+// attrs (`href`, `src`, `cite`, `formaction` etc.). Allowed: http(s), mailto,
+// cid, data:image/*; everything else (notably javascript: and vbscript:) is
+// blocked. Empty / relative URLs (no scheme) are always
 // allowed because they resolve relatively at render time and pose no
 // injection vector.
 var allowedURLSchemes = map[string]bool{
@@ -261,8 +260,8 @@ var urlAttributes = map[string]bool{
 }
 
 // allowedStyleProps enumerates CSS property names that pass through the
-// inline `style="..."` attribute (spec §4.4 last paragraph). Everything else
-// is removed from the property list and surfaced via STYLE_PROPERTY_DROPPED.
+// inline `style="..."` attribute. Everything else is removed from the
+// property list and surfaced via STYLE_PROPERTY_DROPPED.
 //
 // `border-*` / `padding-*` / `margin-*` are treated as prefix matches by
 // classifyStyleProperty so the four directional variants (border-top etc.)
@@ -283,9 +282,9 @@ var allowedStyleProps = map[string]bool{
 	"height":           true,
 	"display":          true,
 	"text-indent":      true,
-	// Quote-block / native Feishu styles spec §4.4 "通过" (the editor-kit
-	// branch keeps them). Whitespace + word-break are part of the existing
-	// `<pre>` / quote wrapper styles in mail_quote.go (e.g. `bodyDivStyle`).
+	// Quote-block / native Feishu styles (tag classification "通过").
+	// Whitespace + word-break are part of the existing `<pre>` / quote
+	// wrapper styles in mail_quote.go (e.g. `bodyDivStyle`).
 	"white-space":     true,
 	"word-break":      true,
 	"word-wrap":       true,
@@ -310,8 +309,8 @@ var allowedStyleProps = map[string]bool{
 }
 
 // stylePropAllowedPrefixes enumerates property name prefixes treated as
-// allowed regardless of suffix (spec §4.4 "border-*"). A trailing "-" makes
-// the prefix self-documenting.
+// allowed regardless of suffix (e.g. "border-*"). A trailing "-" makes the
+// prefix self-documenting.
 var stylePropAllowedPrefixes = []string{
 	"border-",
 	"padding-",
@@ -338,7 +337,7 @@ func classifyStyleProperty(name string) bool {
 
 // isEventHandlerAttr reports whether the attribute name is a DOM event
 // handler (`on*`). The lib removes every such attribute regardless of its
-// value (spec §4.4 row "错误（删除）" + the well-known XSS vector).
+// value (tag classification row "错误（删除）" + the well-known XSS vector).
 func isEventHandlerAttr(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if !strings.HasPrefix(name, "on") {

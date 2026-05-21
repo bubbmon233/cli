@@ -177,14 +177,13 @@ var MailDraftEdit = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		// Writing-path lint for body ops only (S2 contract «Pre-call vs in-call
-		// validation split» — +draft-edit row): set_body / set_reply_body
+		// Writing-path lint for body ops only: set_body / set_reply_body
 		// rewrite the body field; other ops (set_subject / set_recipients /
 		// add_attachment / etc.) operate on non-HTML fields and MUST NOT be
 		// linted. Lint runs after loadPatchFile parses JSON and BEFORE
 		// draftpkg.Apply writes into the snapshot. Each op's `value` is
 		// replaced with the cleaned HTML in place; findings accumulate across
-		// ops into a single per-patch report (spec §4.3).
+		// ops into a single per-patch report.
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		for i := range patch.Ops {
 			op := &patch.Ops[i]

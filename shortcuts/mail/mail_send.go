@@ -227,7 +227,7 @@ var MailSend = common.Shortcut{
 		var autoResolvedPaths []string
 		var composedHTMLBody string
 		var composedTextBody string
-		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		// Lint findings flowing into the writing-path stdout envelope.
 		// Initialised as empty (non-nil) slices so the envelope always carries
 		// `lint_applied[]` / `original_blocked[]` even on the plain-text path.
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
@@ -245,12 +245,11 @@ var MailSend = common.Shortcut{
 				return resolveErr
 			}
 			resolved = injectSignatureIntoBody(resolved, sigResult)
-			// Writing-path lint: AutoFix=true / Strict=false (spec §4.3 — the
-			// writing-path safety contract has no `--no-lint` opt-out). Runs
-			// AFTER applyTemplate (above) + ResolveLocalImagePaths +
+			// Writing-path lint: AutoFix=true / Strict=false — the writing-path
+			// safety contract has no `--no-lint` opt-out. Runs AFTER
+			// applyTemplate (above) + ResolveLocalImagePaths +
 			// injectSignatureIntoBody so the lint sees the final HTML the
-			// recipient renderer will see (S2 contract «Pre-call vs in-call
-			// validation split» — Compose 5 row).
+			// recipient renderer will see.
 			cleanedHTML, rep := runWritePathLint(resolved)
 			resolved = cleanedHTML
 			lintApplied, lintBlocked = rep.Applied, rep.Blocked

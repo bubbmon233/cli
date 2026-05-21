@@ -29,7 +29,7 @@ var showLintDetailsFlag = common.Flag{
 // runWritePathLint is the single entrypoint compose 5 + +draft-edit body ops
 // use to invoke the lint lib before writing to emlbuilder / draftpkg.Apply.
 //
-// The writing-path safety contract (spec §4.3) is:
+// The writing-path safety contract is:
 //   - The lib always autofixes warnings and removes errors; there is no
 //     opt-out.
 //   - The returned report is appended to the writing-path stdout envelope
@@ -40,8 +40,7 @@ var showLintDetailsFlag = common.Flag{
 //   - When the body is plain-text, the lib short-circuits and returns an
 //     EmptyReport; the cleaned HTML equals the input verbatim. Compose 5
 //     callers are expected to gate the call on their existing useHTML
-//     branch (S2 contract «N-way isomorphism» — diff template) so the
-//     plain-text path doesn't pay the parse cost.
+//     branch so the plain-text path doesn't pay the parse cost.
 //
 // Returns the cleaned HTML + the report. Callers MUST use the returned
 // `cleaned` value as the body that goes to bld.HTMLBody / draftpkg.Apply

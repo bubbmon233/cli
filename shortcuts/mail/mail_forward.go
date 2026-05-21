@@ -253,7 +253,7 @@ var MailForward = common.Shortcut{
 		var composedHTMLBody string
 		var composedTextBody string
 		var srcInlineBytes int64
-		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		// Lint findings flowing into the writing-path stdout envelope.
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if useHTML {
 			if err := validateInlineImageURLs(sourceMsg); err != nil {
@@ -282,7 +282,8 @@ var MailForward = common.Shortcut{
 			}
 			// Writing-path lint: lint user-authored body + signature, NOT the
 			// forward quote / large-attachment card derived from the original
-			// message (spec §4.3 + S2 contract «Sibling-divergence ledger»).
+			// message (re-linting quote blocks risks dropping allow-listed
+			// Feishu-native quote markup).
 			cleaned, rep := runWritePathLint(bodyWithSig)
 			bodyWithSig = cleaned
 			lintApplied, lintBlocked = rep.Applied, rep.Blocked

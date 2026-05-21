@@ -20,7 +20,7 @@ func jsonDecoderUnmarshal(b []byte, v interface{}) error { return json.Unmarshal
 // =====================================================================
 // Writing-path lint integration tests — compose 5 + +draft-edit emit
 // `lint_applied[]` and `original_blocked[]` arrays in the stdout envelope
-// always (spec §4.3 contract).
+// always.
 // =====================================================================
 
 // TestRunWritePathLint_PlainTextReturnsEmptyReport verifies the helper
@@ -41,7 +41,7 @@ func TestRunWritePathLint_PlainTextReturnsEmptyReport(t *testing.T) {
 
 // TestRunWritePathLint_HTMLAlwaysAutofixedWarningNeverElevated verifies the
 // writing path always autofixes warnings and never elevates them — the
-// writing-path safety contract has no opt-out (spec §4.3). The input
+// writing-path safety contract has no opt-out. The input
 // triggers two warning autofixes (<p> paragraph-rewrite + <font> tag
 // rewrite); both must surface in `Applied` and never appear in `Blocked`.
 func TestRunWritePathLint_HTMLAlwaysAutofixedWarningNeverElevated(t *testing.T) {
@@ -683,7 +683,7 @@ func TestMailDraftEdit_WritePathLintAutofixesFontViaBodyFlag(t *testing.T) {
 // surface the two contract arrays as empty (non-nil) slices because the
 // detail flag toggles their presence; the plain-text branch produces zero
 // findings but the keys must still appear so consumers can rely on them
-// unconditionally (spec §4.3).
+// unconditionally.
 func TestMailDraftCreate_PlainTextShowLintDetailsEmitsEmptyArrays(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	chdirTemp(t)

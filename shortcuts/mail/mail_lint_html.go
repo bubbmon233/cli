@@ -16,10 +16,9 @@ import (
 
 // MailLintHTML is the `+lint-html` shortcut: lint a mail HTML body for
 // compatibility / safety / Larksuite-native rules. Read-only — no draft is
-// touched, no API call is made. Per spec §4.1 this is a stand-alone preview
-// counterpart to the writing-path lint built into compose 5 / +draft-edit
-// (§4.3); both share a single lint lib (shortcuts/mail/lint) so behaviour
-// can't drift.
+// touched, no API call is made. This is a stand-alone preview counterpart to
+// the writing-path lint built into compose 5 / +draft-edit; both share a
+// single lint lib (shortcuts/mail/lint) so behaviour can't drift.
 //
 // Returns by default (token-frugal envelope):
 //
@@ -27,15 +26,13 @@ import (
 //
 // With --show-lint-details, the envelope additionally surfaces the full
 // `warnings[]` / `errors[]` Finding arrays. Each entry has: rule_id /
-// severity / tag_or_attr / excerpt / hint (S2 contract «Header / RPC
-// contract» — Stdout envelope contract).
+// severity / tag_or_attr / excerpt / hint.
 var MailLintHTML = common.Shortcut{
 	Service:     "mail",
 	Command:     "+lint-html",
 	Description: "Lint mail HTML body for compatibility / safety / Larksuite-native rules. Returns warnings/errors and (always) auto-fixed cleaned_html. Read-only: no draft, no API call. Use this BEFORE creating a draft to preview what the writing-path lint would change.",
 	Risk:        "read",
-	// No API call → no scope requirement. KB Pitfall 3 doesn't apply (no
-	// meta_data.json `accessTokens` to align with).
+	// No API call → no scope requirement.
 	Scopes: []string{},
 	// Identity-agnostic: lint is local pure-CPU. Both user and bot
 	// identities can run it.
@@ -43,10 +40,9 @@ var MailLintHTML = common.Shortcut{
 	HasFormat: true,
 	Flags: []common.Flag{
 		// --body / --body-file are MUTUALLY EXCLUSIVE BUT EXACTLY-ONE-OF.
-		// We do NOT use cobra `Required: true` on either (KB Pitfall 1: it
-		// fires before Validate runs and blocks the legitimate "the other
-		// one is set" path); we enforce the constraint inside the Validate
-		// callback below.
+		// We do NOT use cobra `Required: true` on either (it fires before
+		// Validate runs and blocks the legitimate "the other one is set"
+		// path); we enforce the constraint inside the Validate callback below.
 		{Name: "body", Desc: "HTML body to lint. Mutually exclusive with --body-file; exactly one is required."},
 		{Name: "body-file", Desc: "Path (relative, within cwd subtree) to a file containing HTML to lint. Mutually exclusive with --body; exactly one is required.", Input: []string{common.File}},
 		showLintDetailsFlag,
@@ -55,9 +51,7 @@ var MailLintHTML = common.Shortcut{
 		body := runtime.Str("body")
 		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
 
-		// Mutual exclusion + exactly-one-of (S2 contract «Public input
-		// surface inventory» — A. New verb cobra flag inventory, --body /
-		// --body-file row).
+		// Mutual exclusion + exactly-one-of validation for --body / --body-file.
 		bodyEmpty := strings.TrimSpace(body) == ""
 		if bodyEmpty && bodyFile == "" {
 			return output.ErrValidation("exactly one of --body or --body-file is required")
@@ -66,9 +60,9 @@ var MailLintHTML = common.Shortcut{
 			return output.ErrValidation("--body and --body-file are mutually exclusive; pass exactly one")
 		}
 
-		// --body-file safety: cwd-subtree only. Mirror the existing pattern
+		// --body-file safety: cwd-subtree only. Mirrors the existing pattern
 		// in mail_template_create.go:resolveTemplateContent + shortcut
-		// runtime.ValidatePath (S2 contract MUST reuse list).
+		// runtime.ValidatePath.
 		if bodyFile != "" {
 			if err := runtime.ValidatePath(bodyFile); err != nil {
 				return output.ErrValidation("--body-file: %v", err)

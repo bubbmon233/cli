@@ -16,7 +16,7 @@ import (
 // These exercise the full cobra Mount → Execute pipeline (parse args →
 // Validate → Execute → OutFormat) so they catch any regression in flag
 // declaration, mutual-exclusion validation, path safety, and the JSON
-// envelope shape (spec §4.2 + S2 contract «Stdout envelope contract»).
+// envelope shape.
 // =====================================================================
 
 // TestMailLintHTML_RequiresExactlyOneOfBodyOrFile verifies the mutual-
@@ -50,8 +50,7 @@ func TestMailLintHTML_RequiresExactlyOneOfBodyOrFile(t *testing.T) {
 }
 
 // TestMailLintHTML_BodyFilePathSafetyRejected verifies absolute paths /
-// `..` traversal are rejected (KB Pitfall 4 + S2 contract «Public input
-// surface inventory»).
+// `..` traversal are rejected by the path safety check.
 func TestMailLintHTML_BodyFilePathSafetyRejected(t *testing.T) {
 	f, stdout, _, _ := mailShortcutTestFactory(t)
 	chdirTemp(t)

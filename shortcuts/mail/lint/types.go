@@ -5,10 +5,9 @@
 // and the writing-path internals of the compose 5 shortcuts (`+send`,
 // `+draft-create`, `+reply`, `+reply-all`, `+forward`) and `+draft-edit` body
 // ops. The lib classifies HTML tags / attributes / inline styles into three
-// tiers (pass / warn-and-autofix / error-delete) per technical-design §4.4 and
-// the mail-editor `editor-kit` branch DOMPurify config. `<style>` is passed
-// through verbatim; `<script>` / `<iframe>` / external `<link>` / on*-handlers
-// / `javascript:` URLs are removed outright.
+// tiers (pass / warn-and-autofix / error-delete) following the three-tier tag
+// classification. `<style>` is passed through verbatim; `<script>` / `<iframe>`
+// / external `<link>` / on*-handlers / `javascript:` URLs are removed outright.
 //
 // The lib is deliberately decoupled from the cobra runtime so that it can be
 // re-used as a pure-CPU pass before `bld.HTMLBody(...)` (compose 5) /
@@ -34,10 +33,8 @@ const (
 	SeverityError Severity = "error"
 )
 
-// Finding describes a single lint observation. The shape matches the
-// stdout-envelope contract documented in spec §4.3 and the S2 contract
-// «Header / RPC contract» section: rule_id / severity / tag_or_attr /
-// excerpt / hint, all UTF-8 strings.
+// Finding describes a single lint observation. The stdout-envelope shape is:
+// rule_id / severity / tag_or_attr / excerpt / hint, all UTF-8 strings.
 type Finding struct {
 	RuleID    string   `json:"rule_id"`
 	Severity  Severity `json:"severity"`
@@ -47,9 +44,9 @@ type Finding struct {
 }
 
 // Options control a single Run invocation. The lib always autofixes warnings
-// and removes errors — there is no opt-out (spec §4.3 explicitly forbids
-// `--no-lint`). The struct is retained for forward compatibility but
-// currently exposes no behavioural switches.
+// and removes errors — there is no opt-out (`--no-lint` is not provided). The
+// struct is retained for forward compatibility but currently exposes no
+// behavioural switches.
 type Options struct{}
 
 // Report is the structured output of a single Run invocation.
@@ -58,7 +55,7 @@ type Options struct{}
 // stdout envelope contract requires `lint_applied` and `original_blocked` to
 // always be present arrays — the JSON encoder must render `[]` rather than
 // `null` so AI / test consumers can rely on `data.lint_applied[]` /
-// `data.original_blocked[]` unconditionally (spec §4.3).
+// `data.original_blocked[]` unconditionally.
 type Report struct {
 	// Applied surfaces warning-tier findings that the lib rewrote in place
 	// (e.g. <font> -> <span style>). Each entry corresponds to a single rule

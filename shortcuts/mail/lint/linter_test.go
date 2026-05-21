@@ -9,11 +9,11 @@ import (
 )
 
 // =====================================================================
-// Tier 1 — pass-through tags / attrs / styles (spec §4.4 row "通过").
+// Tier 1 — pass-through tags / attrs / styles (tag classification row "通过").
 // =====================================================================
 
 // TestRun_AllowedTagsPassThrough verifies that the canonical Feishu-native
-// tag set passes through without findings (spec §4.4 row "通过").
+// tag set passes through without findings (tag classification row "通过").
 func TestRun_AllowedTagsPassThrough(t *testing.T) {
 	cases := []struct {
 		name string
@@ -64,8 +64,8 @@ func TestRun_AllowedTagsPassThrough(t *testing.T) {
 	}
 }
 
-// TestRun_AllowedStylePropertiesPassThrough verifies all spec §4.4 style
-// allow-list properties survive a round-trip without dropping.
+// TestRun_AllowedStylePropertiesPassThrough verifies all allowed style
+// properties survive a round-trip without dropping.
 func TestRun_AllowedStylePropertiesPassThrough(t *testing.T) {
 	allowed := []string{
 		"color:rgb(31,35,41)",
@@ -102,7 +102,7 @@ func TestRun_AllowedStylePropertiesPassThrough(t *testing.T) {
 }
 
 // =====================================================================
-// Tier 2 — warning + autofix tags (spec §4.4 row "警告 + 自动修复").
+// Tier 2 — warning + autofix tags (tag classification row "警告 + 自动修复").
 // =====================================================================
 
 // TestRun_FontTagAutofixedToSpan verifies <font color="..."> rewrites to
@@ -169,7 +169,7 @@ func TestRun_MarqueeBlinkCollapseToSpan(t *testing.T) {
 }
 
 // =====================================================================
-// Tier 3 — error / delete tags (spec §4.4 row "错误（删除）").
+// Tier 3 — error / delete tags (tag classification row "错误（删除）").
 // =====================================================================
 
 // TestRun_ScriptTagBlocked checks that <script> is removed unconditionally.
@@ -250,7 +250,7 @@ func TestRun_OnErrorAttrBlocked(t *testing.T) {
 }
 
 // =====================================================================
-// URL scheme allow-list (spec §4.4 — "URL scheme").
+// URL scheme allow-list.
 // =====================================================================
 
 // TestRun_JavaScriptURLBlocked verifies javascript: hrefs are stripped.
@@ -279,7 +279,7 @@ func TestRun_VBScriptURLBlocked(t *testing.T) {
 }
 
 // TestRun_DataNonImageURLBlocked verifies data:text/html is rejected
-// (only data:image/* is allowed per spec §4.4).
+// (only data:image/* is allowed).
 func TestRun_DataNonImageURLBlocked(t *testing.T) {
 	rep := Run(`<img src="data:text/html,<script>1</script>">`, Options{})
 	if len(rep.Blocked) == 0 {
@@ -308,7 +308,7 @@ func TestRun_RelativeURLAllowed(t *testing.T) {
 }
 
 // =====================================================================
-// Style property allow-list (spec §4.4 — last paragraph).
+// Style property allow-list.
 // =====================================================================
 
 // TestRun_StylePropertyDropped verifies non-allow-list properties drop.
@@ -374,7 +374,7 @@ func TestRun_FeishuListShorthandMarginPreserved(t *testing.T) {
 }
 
 // =====================================================================
-// CleanedHTML output / contract guarantees (spec §4.3).
+// CleanedHTML output / contract guarantees.
 // =====================================================================
 
 // TestRun_EmptyArraysAlwaysPresent verifies the report has non-nil empty
@@ -457,7 +457,7 @@ func TestRun_HasWarningFindingsFlag(t *testing.T) {
 }
 
 // =====================================================================
-// Excerpt cap (S2 contract «Server-mirrored constraints»).
+// Excerpt cap.
 // =====================================================================
 
 // TestTruncateExcerpt_RespectsCap verifies the per-finding excerpt cap.

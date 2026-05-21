@@ -256,7 +256,7 @@ var MailReply = common.Shortcut{
 		var composedHTMLBody string
 		var composedTextBody string
 		var srcInlineBytes int64
-		// Lint findings flowing into the writing-path stdout envelope (spec §4.3).
+		// Lint findings flowing into the writing-path stdout envelope.
 		// Initialise empty (non-nil) so the envelope always carries
 		// `lint_applied[]` / `original_blocked[]` even on the plain-text path.
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
@@ -277,12 +277,12 @@ var MailReply = common.Shortcut{
 			if sigResult != nil {
 				bodyWithSig += draftpkg.SignatureSpacing() + draftpkg.BuildSignatureHTML(sigResult.ID, sigResult.RenderedContent)
 			}
-			// Writing-path lint (spec §4.3): operate on the user-authored body
-			// + signature ONLY — NOT on `quoted` (the <blockquote> derived from
-			// the original message). Double-sanitising risks dropping
-			// legitimate Lark quote markup such as adit-html-block* /
-			// history-quote-* / lark-mail-doc-quote (S2 contract «Sibling-
-			// divergence ledger» / spec §4.4 row "通过").
+			// Writing-path lint: operate on the user-authored body + signature
+			// ONLY — NOT on `quoted` (the <blockquote> derived from the
+			// original message). Double-sanitising risks dropping legitimate
+			// Lark quote markup such as adit-html-block* / history-quote-* /
+			// lark-mail-doc-quote (these classes are intentionally allow-listed
+			// in the tag classification "通过" row).
 			cleaned, rep := runWritePathLint(bodyWithSig)
 			bodyWithSig = cleaned
 			lintApplied, lintBlocked = rep.Applied, rep.Blocked

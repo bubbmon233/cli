@@ -15,9 +15,8 @@ import (
 
 // MaxExcerptBytes caps the raw-HTML excerpt embedded in a Finding.Excerpt so
 // a single offending tag with megabyte content can't bloat the envelope JSON.
-// S2 contract «Server-mirrored constraints» row "EML composition body+inline+
-// SMALL ≤ 25 MB" calls this out: lint ops on bytes only, but the excerpt
-// representation must not be size-amplifying.
+// Lint operates on bytes only, but the excerpt representation must not be
+// size-amplifying.
 const MaxExcerptBytes = 200
 
 // Run lints the given HTML body and returns a structured Report.
@@ -121,8 +120,8 @@ func processElement(parent, n *xhtml.Node, rep *Report) {
 			Excerpt:   excerptOf(n),
 			Hint:      hintForBlockedTag(tagName),
 		})
-		// Always remove blocked tags — writing-path safety floor cannot be
-		// opted out of (spec §4.3 — `--no-lint` is not provided).
+		// Always remove blocked tags — the writing-path safety floor has no
+		// opt-out; `--no-lint` is not provided.
 		parent.RemoveChild(n)
 		return
 
@@ -156,8 +155,8 @@ func processElement(parent, n *xhtml.Node, rep *Report) {
 //   - filters the `style` attribute property-by-property against the allow-list
 //
 // Other attributes pass through unchanged. The cli's existing
-// `validateInlineCIDs` (helpers.go:2226) handles `cid:`-specific checks; the
-// lint must not duplicate that responsibility (S2 contract «MUST reuse» row).
+// `validateInlineCIDs` (helpers.go:2226) handles `cid:`-specific checks;
+// the lint must not duplicate that responsibility.
 func processAttributes(n *xhtml.Node, rep *Report) {
 	keep := n.Attr[:0]
 	for _, attr := range n.Attr {
@@ -330,7 +329,7 @@ func rewriteWarnTag(n *xhtml.Node, tagName string) {
 }
 
 // mapFontSize maps the legacy <font size="N"> values (1..7) to a CSS px
-// equivalent. The mapping mirrors the editor-kit branch's renderer.
+// equivalent, matching the mapping used by Feishu mail-editor's renderer.
 // Out-of-range values fall through to the empty string so the property is
 // dropped (better than emitting an arbitrary value).
 func mapFontSize(raw string) string {
@@ -359,14 +358,14 @@ func mapFontSize(raw string) string {
 // with "; " separators) and a slice of dropped property names (lower-case)
 // so the caller can surface STYLE_PROPERTY_DROPPED findings.
 //
-// NOTE: We do NOT validate property values — only property names. Spec §4.4
-// is explicit: "style 属性按 CSS property 白名单过滤"; value-level validation
+// NOTE: We do NOT validate property values — only property names. The style
+// attribute is filtered by CSS property allow-list; value-level validation
 // (e.g. URL safety inside `background-image: url(...)`) is delegated to the
 // urlAttributes path because such values typically appear in `src` / `href`
 // attrs in compose-5 templates. Users authoring `background-image: url(http:...)`
 // in inline style will see the property pass — the URL inside is not a
 // security concern at the inline-style level since URL fetching from style
-// is restricted by Feishu's renderer-side CSP regardless.
+// is restricted by the rendering layer's CSP regardless.
 func sanitiseStyleAttr(raw string) (cleaned string, dropped []string) {
 	if strings.TrimSpace(raw) == "" {
 		return "", nil
@@ -397,8 +396,7 @@ func sanitiseStyleAttr(raw string) (cleaned string, dropped []string) {
 }
 
 // hintForBlockedTag returns a hint for an error-blocked tag (matching
-// the `output.ErrWithHint` convention used elsewhere in the cli — see
-// KB conventions/coding.md).
+// the `output.ErrWithHint` convention used elsewhere in the cli).
 func hintForBlockedTag(tag string) string {
 	switch tag {
 	case "script":

@@ -245,8 +245,8 @@ func resolveDraftCreateBody(runtime *common.RuntimeContext) (string, error) {
 // processing.
 //
 // Returns the rawEML, the writing-path lint findings (lint_applied /
-// original_blocked — never nil; spec §4.3 contract requires the arrays
-// always be present), and any error encountered.
+// original_blocked — never nil; the arrays must always be present), and
+// any error encountered.
 func buildRawEMLForDraftCreate(
 	ctx context.Context,
 	runtime *common.RuntimeContext,
@@ -260,7 +260,7 @@ func buildRawEMLForDraftCreate(
 ) (rawEMLOut string, lintApplied, lintBlocked []lint.Finding, err error) {
 	// Initialise lint findings as empty (non-nil) slices so callers can
 	// surface them through the envelope unconditionally even on the
-	// plain-text branch (spec §4.3).
+	// plain-text branch.
 	lintApplied, lintBlocked = emptyLintFindings()
 
 	senderEmail := resolveComposeSenderEmail(runtime)
@@ -318,12 +318,11 @@ func buildRawEMLForDraftCreate(
 			return "", lintApplied, lintBlocked, resolveErr
 		}
 		resolved = injectSignatureIntoBody(resolved, sigResult)
-		// Writing-path lint: AutoFix=true / Strict=false (spec §4.3 — the
-		// writing-path safety contract has no `--no-lint` opt-out). Runs
-		// AFTER applyTemplate (in caller) + ResolveLocalImagePaths +
+		// Writing-path lint: AutoFix=true / Strict=false — the writing-path
+		// safety contract has no `--no-lint` opt-out. Runs AFTER
+		// applyTemplate (in caller) + ResolveLocalImagePaths +
 		// injectSignatureIntoBody so the lint sees the final HTML the
-		// recipient renderer will see (S2 contract «Pre-call vs in-call
-		// validation split» — Compose 5 row).
+		// recipient renderer will see.
 		cleaned, rep := runWritePathLint(resolved)
 		resolved = cleaned
 		lintApplied, lintBlocked = rep.Applied, rep.Blocked
