@@ -485,21 +485,22 @@ func renderFragment(root *xhtml.Node) string {
 //
 // Rules (visual parity with Feishu mail-editor's own native inline styles):
 //
-//   <ol> / <ul>     → margin-top:0;margin-bottom:0;margin-left:0;padding-left:0;list-style-position:inside
-//   <li>            → line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0;
-//                     margin-left:0;display:list-item;list-style-position:inside;
-//                     list-style-type:decimal (ol parent) | disc (ul parent);
-//                     font-family:inherit;font-size:14px
-//   <blockquote>    → padding-left:0;color:rgb(100,106,115);
-//                     border-left:2px solid rgb(187,191,196);margin:0
-//   <a>             → class="not-doclink" + cursor:pointer;text-decoration:none;
-//                     color:rgb(20,86,240)
-//   <p>             → rewritten to
-//                     <div style="margin-top:4px;margin-bottom:4px;line-height:1.6">
-//                       <div dir="auto" style="font-size:14px">...children...</div>
-//                     </div>
-//                     This is the only rewrite that changes tree shape; the
-//                     others only touch attributes.
+//	<ol> / <ul>     → margin-top:0;margin-bottom:0;margin-left:0;padding-left:0;list-style-position:inside
+//	<li>            → line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0;
+//	                  margin-left:0;display:list-item;list-style-position:inside;
+//	                  list-style-type:decimal (ol parent) | disc (ul parent);
+//	                  font-family:inherit;font-size:14px
+//	<blockquote>    → padding-left:0;color:rgb(100,106,115);
+//	                  border-left:2px solid rgb(187,191,196);margin:0
+//	<a>             → class="not-doclink" + cursor:pointer;text-decoration:none;
+//	                  color:rgb(20,86,240)
+//	<p>             → rewritten to
+//	                  <div style="margin-top:4px;margin-bottom:4px;line-height:1.6">
+//	                    <div dir="auto" style="font-size:14px">...children...</div>
+//	                  </div>
+//	                  This is the only rewrite that changes tree shape; the
+//	                  others only touch attributes.
+//
 // nativeCtx accumulates per-Run() state shared across the recursive
 // applyFeishuNativeStyles walk. The only field today is the <ol>→id map
 // used to seed `data-ol-id` deterministically (see nodeShortID).
@@ -893,18 +894,6 @@ func nodeShortID(index int) string {
 	h := fnv.New32a()
 	fmt.Fprintf(h, "%d", index)
 	return fmt.Sprintf("%08x", h.Sum32())
-}
-
-// readAttr returns the value of the named attribute (case-insensitive) or
-// "" if absent.
-func readAttr(n *xhtml.Node, key string) string {
-	key = strings.ToLower(key)
-	for _, attr := range n.Attr {
-		if strings.ToLower(attr.Key) == key {
-			return attr.Val
-		}
-	}
-	return ""
 }
 
 // ensureFeishuListItemStyle adds Feishu-native inline styles + class +
