@@ -99,31 +99,26 @@
 <!-- 有序列表 -->
 <ol><li>条</li></ol>
 
-<!-- 多级列表 -->
-<ol start="1" data-list-number="true" style="margin:0px;padding-left:0px;list-style-position:inside">
-   <li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="demo" data-start="1" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
+<!-- 多级列表（嵌套结构：子项必须放在父 <li> 内，不要拆成多个独立 ol/ul 兄弟；
+     <ul>/<ol> 的直接子节点必须是 <li>，HTML 规范不允许 <ul> 直接套 <ul>） -->
+<ol data-list-number="true" style="margin:0px;padding-left:0px;list-style-position:inside">
+   <li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="demo" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
       <b><span style="font-family:inherit"><span style="color:rgb(31,35,41)">第一级（ol decimal）</span></span></b>
-   </li>
-</ol>
-
-<ul data-list-bullet="true" style="margin:0px;padding-left:0px;list-style-position:inside">
-   <ul data-list-bullet="true" style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside">
-      <li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
-         <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第二级（ul circle，缩进 24px）</span></span>
-      </li>
       <ul data-list-bullet="true" style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside">
-         <li class="temp-li bullet3" data-li-line="true" data-list="bullet3" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:square;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
-          <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第三级（ul square，再缩进24px）</span></span>
+         <li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
+            <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第二级（ul circle，缩进 24px）</span></span>
+            <ul data-list-bullet="true" style="margin:0px 0px 0px 24px;padding-left:0px;list-style-position:inside">
+               <li class="temp-li bullet3" data-li-line="true" data-list="bullet3" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:square;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
+                  <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第三级（ul square，再缩进 24px）</span></span>
+               </li>
+            </ul>
+         </li>
+         <li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
+            <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第二级（同层）</span></span>
          </li>
       </ul>
-      <li class="temp-li bullet2" data-li-line="true" data-list="bullet2" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:circle;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
-         <span style="font-family:inherit"><span style="color:rgb(31,35,41)">第二级（同层）</span></span>
-      </li>
-   </ul>
-</ul>
-
-<ol start="2" data-list-number="true" style="margin:0px;padding-left:0px;list-style-position:inside">
-   <li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="demo" data-start="2" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
+   </li>
+   <li class="temp-li number1" data-li-line="true" data-list="number1" data-ol-id="demo" style="line-height:1.6;margin:4px 0;padding-left:0px;display:list-item;list-style-type:decimal;font-family:inherit;font-size:14px;list-style-position:inside" dir="auto">
       <b><span style="font-family:inherit"><span style="color:rgb(31,35,41)">第一级（接续编号）</span></span></b>
    </li>
 </ol>
