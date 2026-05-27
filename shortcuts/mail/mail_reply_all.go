@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
 	draftpkg "github.com/larksuite/cli/shortcuts/mail/draft"
 	"github.com/larksuite/cli/shortcuts/mail/emlbuilder"
@@ -76,12 +75,15 @@ var MailReplyAll = common.Shortcut{
 		hasTemplate := runtime.Str("template-id") != ""
 		bodyFlag := runtime.Str("body")
 		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
-		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
 		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
 			return err
 		}
-		if !hasTemplate && bodyEmpty && bodyFile == "" {
-			return output.ErrValidation("--body or --body-file is required; pass the reply body (or use --template-id)")
+		body, bErr := resolveBodyFromFlags(runtime)
+		if bErr != nil {
+			return bErr
+		}
+		if err := validateRequiredResolvedBody(body, hasTemplate, "--body or --body-file is required; pass the reply body (or use --template-id)"); err != nil {
+			return err
 		}
 		if err := validateConfirmSendScope(runtime); err != nil {
 			return err

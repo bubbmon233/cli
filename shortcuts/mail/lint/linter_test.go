@@ -373,6 +373,63 @@ func TestRun_FeishuListShorthandMarginPreserved(t *testing.T) {
 	}
 }
 
+// TestRun_BlockquoteShorthandBorderPreserved verifies the blockquote native
+// autofix does not override a user-authored border shorthand by appending
+// border-left. CSS applies the later longhand over the earlier shorthand, so
+// adding border-left here would replace the user's left border.
+func TestRun_BlockquoteShorthandBorderPreserved(t *testing.T) {
+	rep := Run(`<blockquote style="border:1px solid red">quoted</blockquote>`, Options{})
+	cleaned := rep.CleanedHTML
+	if !strings.Contains(cleaned, `border:1px solid red`) {
+		t.Fatalf("user-authored border shorthand should survive, cleaned=%q", cleaned)
+	}
+	if strings.Contains(cleaned, `border-left:`) {
+		t.Fatalf("autofix must not append border-left when border shorthand already declares it, cleaned=%q", cleaned)
+	}
+	if !strings.Contains(cleaned, `color:rgb(100,106,115)`) {
+		t.Fatalf("blockquote native autofix should still add missing non-border style props, cleaned=%q", cleaned)
+	}
+}
+
+func TestRun_BlockquoteNativeContentWrapper(t *testing.T) {
+	rep := Run(`<blockquote>quoted</blockquote>`, Options{})
+	cleaned := rep.CleanedHTML
+	for _, want := range []string{
+		`class="lark-mail-doc-quote"`,
+		`border-left:2px solid rgb(187,191,196)`,
+		`<div dir="auto" style="font-size:14px;padding-left:12px">quoted</div>`,
+	} {
+		if !strings.Contains(cleaned, want) {
+			t.Fatalf("cleaned blockquote missing %q, cleaned=%q", want, cleaned)
+		}
+	}
+}
+
+func TestRun_BlockquoteNativeContentWrapperIdempotent(t *testing.T) {
+	in := `<blockquote class="lark-mail-doc-quote" style="padding-left:0px;color:rgb(100,106,115);border-left:2px solid rgb(187,191,196);margin:0px"><div dir="auto" style="font-size:14px;padding-left:12px">quoted</div></blockquote>`
+	rep := Run(in, Options{})
+	if strings.Count(rep.CleanedHTML, `padding-left:12px`) != 1 {
+		t.Fatalf("native-shaped blockquote should not get nested content wrappers, cleaned=%q", rep.CleanedHTML)
+	}
+}
+
+func TestRun_ParagraphRewritePreservesDirAndFontSize(t *testing.T) {
+	rep := Run(`<p style="font-size:20px" dir="rtl">hello</p>`, Options{})
+	cleaned := rep.CleanedHTML
+	if !strings.Contains(cleaned, `style="font-size:20px;margin-top:4px;margin-bottom:4px;line-height:1.6" dir="rtl"`) {
+		t.Fatalf("outer paragraph wrapper should preserve author font-size and dir, cleaned=%q", cleaned)
+	}
+	if !strings.Contains(cleaned, `<div dir="rtl">hello</div>`) {
+		t.Fatalf("inner paragraph wrapper should inherit author dir and omit default font-size, cleaned=%q", cleaned)
+	}
+	if strings.Contains(cleaned, `font-size:14px`) {
+		t.Fatalf("inner paragraph wrapper must not force default font-size over author value, cleaned=%q", cleaned)
+	}
+	if strings.Contains(cleaned, `dir="auto"`) {
+		t.Fatalf("inner paragraph wrapper must not force dir=auto over author value, cleaned=%q", cleaned)
+	}
+}
+
 // =====================================================================
 // CleanedHTML output / contract guarantees.
 // =====================================================================

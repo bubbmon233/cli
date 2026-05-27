@@ -37,7 +37,7 @@ var MailDraftEdit = common.Shortcut{
 		{Name: "set-bcc", Desc: "Replace the entire Bcc recipient list with the addresses provided here. Separate multiple addresses with commas. Display-name format is supported."},
 		{Name: "body", Desc: "Full email body for a complete replacement (set_body). Prefer HTML for rich formatting (bold, lists, links); plain text is also supported. Body type is auto-detected. Use --patch-file with set_reply_body when you need to preserve an existing reply/forward quote block; use --body when you want a full body replacement. Mutually exclusive with --body-file. Cannot be combined with --patch-file body ops."},
 		bodyFileFlag,
-		{Name: "patch-file", Desc: "Edit entry point for body edits, incremental recipient changes, header edits, attachment changes, or inline-image changes. All body edits MUST go through --patch-file. Two body ops: set_body (full replacement including quote) and set_reply_body (replaces only user-authored content, auto-preserves quote block). Run --inspect first to check has_quoted_content, then --print-patch-template for the JSON structure. Relative path only."},
+		{Name: "patch-file", Desc: "Advanced edit entry point for body edits, incremental recipient changes, header edits, attachment changes, or inline-image changes. Use --body/--body-file for quick full-body replacement; use --patch-file with set_body/set_reply_body when you need typed body ops, especially set_reply_body to preserve an existing reply/forward quote block. Run --inspect first to check has_quoted_content, then --print-patch-template for the JSON structure. Relative path only."},
 		{Name: "print-patch-template", Type: "bool", Desc: "Print the JSON template and supported operations for the --patch-file flag. Recommended first step before generating a patch file. No draft read or write is performed."},
 		{Name: "set-priority", Desc: "Set email priority: high, normal, low. Setting 'normal' removes any existing priority header."},
 		{Name: "set-event-summary", Desc: "Set calendar event title. Must be used together with --set-event-start and --set-event-end."},
@@ -71,7 +71,7 @@ var MailDraftEdit = common.Shortcut{
 			return common.NewDryRunAPI().Set("error", err.Error())
 		}
 		return common.NewDryRunAPI().
-			Desc("Edit an existing draft without sending it: first call drafts.get(format=raw) to fetch the current EML, parse it into MIME structure, apply either direct flags or the typed patch from patch-file, re-serialize the updated draft, and then call drafts.update. This is a minimal-edit pipeline rather than a full rebuild, so unchanged headers, attachments, and MIME subtrees are preserved where possible. Body edits must go through --patch-file using set_body or set_reply_body ops. It also has no optimistic locking, so concurrent edits to the same draft are last-write-wins.").
+			Desc("Edit an existing draft without sending it: first call drafts.get(format=raw) to fetch the current EML, parse it into MIME structure, apply either direct flags or the typed patch from patch-file, re-serialize the updated draft, and then call drafts.update. This is a minimal-edit pipeline rather than a full rebuild, so unchanged headers, attachments, and MIME subtrees are preserved where possible. Quick full-body replacement can use --body/--body-file; advanced body edits can use --patch-file with set_body or set_reply_body ops. It also has no optimistic locking, so concurrent edits to the same draft are last-write-wins.").
 			GET(mailboxPath(mailboxID, "drafts", draftID)).
 			Params(map[string]interface{}{"format": "raw"}).
 			PUT(mailboxPath(mailboxID, "drafts", draftID)).
@@ -589,7 +589,7 @@ func buildDraftEditPatchTemplate() map[string]interface{} {
 		},
 		"recommended_usage": []string{
 			"Use direct flags (--set-subject, --set-to, --set-cc, --set-bcc) for simple metadata edits",
-			"Use --patch-file for ALL body edits and advanced changes (recipients, headers, attachments, inline images)",
+			"Use --body/--body-file for quick full-body replacement; use --patch-file for advanced body edits and advanced changes (recipients, headers, attachments, inline images)",
 			"Before editing body, run --inspect to check has_quoted_content; if true, use set_reply_body instead of set_body",
 		},
 		"body_edit_decision_guide": []map[string]interface{}{

@@ -77,6 +77,13 @@ func resolveBodyFromFlags(runtime *common.RuntimeContext) (string, error) {
 	return readBodyFile(runtime.FileIO(), path)
 }
 
+func validateRequiredResolvedBody(body string, hasTemplate bool, message string) error {
+	if !hasTemplate && strings.TrimSpace(body) == "" {
+		return output.ErrValidation(message)
+	}
+	return nil
+}
+
 // readBodyFile loads --body-file content with a size cap. Returns an
 // ErrValidation error if the file exceeds maxBodyFileSize or any IO error
 // occurs. The size check uses io.LimitReader(maxBodyFileSize+1) so any

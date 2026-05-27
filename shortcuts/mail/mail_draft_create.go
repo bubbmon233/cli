@@ -87,15 +87,11 @@ var MailDraftCreate = common.Shortcut{
 		hasTemplate := runtime.Str("template-id") != ""
 		bodyFlag := runtime.Str("body")
 		bodyFile := strings.TrimSpace(runtime.Str("body-file"))
-		bodyEmpty := strings.TrimSpace(bodyFlag) == ""
 		if err := validateBodyFileMutex(bodyFlag, bodyFile, runtime.ValidatePath); err != nil {
 			return err
 		}
 		if !hasTemplate && strings.TrimSpace(runtime.Str("subject")) == "" {
 			return output.ErrValidation("--subject is required; pass the final email subject (or use --template-id)")
-		}
-		if !hasTemplate && bodyEmpty && bodyFile == "" {
-			return output.ErrValidation("--body or --body-file is required; pass the full email body (or use --template-id)")
 		}
 		if err := validateSignatureWithPlainText(runtime.Bool("plain-text"), runtime.Str("signature-id")); err != nil {
 			return err
@@ -108,6 +104,9 @@ var MailDraftCreate = common.Shortcut{
 		body, bErr := resolveBodyFromFlags(runtime)
 		if bErr != nil {
 			return bErr
+		}
+		if err := validateRequiredResolvedBody(body, hasTemplate, "--body or --body-file is required; pass the full email body (or use --template-id)"); err != nil {
+			return err
 		}
 		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), body); err != nil {
 			return err

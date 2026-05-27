@@ -486,12 +486,13 @@ func renderFragment(root *xhtml.Node) string {
 // Rules (visual parity with Feishu mail-editor's own native inline styles):
 //
 //	<ol> / <ul>     → margin-top:0;margin-bottom:0;margin-left:0;padding-left:0;list-style-position:inside
-//	<li>            → line-height:1.6;margin-top:4px;margin-bottom:4px;padding-left:0;
+//	<li>            → line-height:1.6;margin-top:0px;margin-bottom:0px;padding-left:0;
 //	                  margin-left:0;display:list-item;list-style-position:inside;
 //	                  list-style-type:decimal (ol parent) | disc (ul parent);
 //	                  font-family:inherit;font-size:14px
-//	<blockquote>    → padding-left:0;color:rgb(100,106,115);
+//	<blockquote>    → class=lark-mail-doc-quote + padding-left:0;color:rgb(100,106,115);
 //	                  border-left:2px solid rgb(187,191,196);margin:0
+//	                  direct children wrapped in <div dir=auto style="font-size:14px;padding-left:12px">
 //	<a>             → class="not-doclink" + cursor:pointer;text-decoration:none;
 //	                  color:rgb(20,86,240)
 //	<p>             → rewritten to
@@ -613,6 +614,8 @@ func hasInlineStyleProp(style, prop string) bool {
 		shorthand = "margin"
 	case strings.HasPrefix(prop, "padding-"):
 		shorthand = "padding"
+	case strings.HasPrefix(prop, "border-"):
+		shorthand = "border"
 	}
 	for _, decl := range strings.Split(style, ";") {
 		decl = strings.TrimSpace(decl)
@@ -754,10 +757,6 @@ func wrapTextChildrenInFeishuSpans(n *xhtml.Node) bool {
 func reorderAttrs(n *xhtml.Node, order []string) {
 	if len(n.Attr) == 0 {
 		return
-	}
-	priority := make(map[string]int, len(order))
-	for i, k := range order {
-		priority[strings.ToLower(k)] = i + 1
 	}
 	sorted := make([]xhtml.Attribute, 0, len(n.Attr))
 	used := make([]bool, len(n.Attr))
@@ -979,22 +978,89 @@ func ensureFeishuListItemStyle(n, parent *xhtml.Node, rep *Report, nctx *nativeC
 }
 
 // ensureFeishuBlockquoteStyle adds Feishu-native inline styles to
-// <blockquote>: the iconic 2px left bar in subtle grey + grey body text.
+// <blockquote>: the iconic 2px left bar in subtle grey + an inner 12px
+// content indent matching the Feishu mail editor output.
 func ensureFeishuBlockquoteStyle(n *xhtml.Node, rep *Report) {
-	if ensureInlineStyleProps(n, [][2]string{
+	styleChanged := ensureInlineStyleProps(n, [][2]string{
 		{"padding-left", "0px"},
 		{"color", "rgb(100,106,115)"},
 		{"border-left", "2px solid rgb(187,191,196)"},
 		{"margin", "0px"},
-	}) {
+	})
+	classChanged := ensureClass(n, "lark-mail-doc-quote")
+	contentChanged := ensureBlockquoteContentWrapper(n)
+	if styleChanged || classChanged || contentChanged {
 		rep.Applied = append(rep.Applied, Finding{
 			RuleID:    RuleStyleBlockquoteNative,
 			Severity:  SeverityWarning,
 			TagOrAttr: "blockquote",
 			Excerpt:   excerptOf(n),
-			Hint:      "Added blockquote inline style (2px left grey bar + grey text)",
+			Hint:      "Added blockquote native style (2px left grey bar + 12px content indent)",
 		})
 	}
+}
+
+// ensureBlockquoteContentWrapper wraps direct blockquote children in the same
+// content div shape emitted by the Feishu mail editor. Existing native-shaped
+// blockquotes are left unchanged.
+func ensureBlockquoteContentWrapper(n *xhtml.Node) bool {
+	first := firstNonWhitespaceChild(n)
+	if first == nil {
+		return false
+	}
+	if first.Type == xhtml.ElementNode && strings.EqualFold(first.Data, "div") && hasAttrValue(first, "dir", "auto") && hasInlineStyleProp(getStyleAttr(first), "padding-left") {
+		return false
+	}
+
+	var children []*xhtml.Node
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		n.RemoveChild(c)
+		children = append(children, c)
+		c = next
+	}
+	inner := &xhtml.Node{
+		Type:     xhtml.ElementNode,
+		Data:     "div",
+		DataAtom: atom.Div,
+		Attr: []xhtml.Attribute{
+			{Key: "dir", Val: "auto"},
+			{Key: "style", Val: "font-size:14px;padding-left:12px"},
+		},
+	}
+	for _, c := range children {
+		inner.AppendChild(c)
+	}
+	n.AppendChild(inner)
+	return true
+}
+
+func firstNonWhitespaceChild(n *xhtml.Node) *xhtml.Node {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == xhtml.TextNode && strings.TrimSpace(c.Data) == "" {
+			continue
+		}
+		return c
+	}
+	return nil
+}
+
+func hasAttrValue(n *xhtml.Node, key, val string) bool {
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, key) && attr.Val == val {
+			return true
+		}
+	}
+	return false
+}
+
+func getStyleAttr(n *xhtml.Node) string {
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, "style") {
+			return attr.Val
+		}
+	}
+	return ""
 }
 
 // ensureFeishuLinkStyle adds Feishu-native class + inline styles to <a>:
@@ -1026,8 +1092,8 @@ func ensureFeishuLinkStyle(n *xhtml.Node, rep *Report) {
 //	</div>
 //
 // User-supplied attributes on the original <p> are preserved on the outer
-// div; the inner div is created fresh. If the <p> already declares any of
-// margin-top / margin-bottom / line-height the user value wins.
+// div. The inner div uses native defaults only when the author did not
+// already provide equivalent paragraph direction / font size.
 //
 // This is the only Feishu-native pass that mutates the tree shape (vs. just
 // adding inline styles). Children are re-parented to the inner div so all
@@ -1053,15 +1119,18 @@ func rewritePToFeishuDiv(n *xhtml.Node, rep *Report) {
 		{"line-height", "1.6"},
 	})
 
-	// Build inner <div dir="auto" style="font-size:14px">.
+	// Build inner <div>. Native defaults are additive: an author-supplied
+	// dir or font-size on the original <p> wins via the outer div.
+	innerDir := attrValueOrDefault(n, "dir", "auto")
+	innerAttrs := []xhtml.Attribute{{Key: "dir", Val: innerDir}}
+	if !hasInlineStyleProp(getStyleAttr(n), "font-size") {
+		innerAttrs = append(innerAttrs, xhtml.Attribute{Key: "style", Val: "font-size:14px"})
+	}
 	inner := &xhtml.Node{
 		Type:     xhtml.ElementNode,
 		Data:     "div",
 		DataAtom: atom.Div,
-		Attr: []xhtml.Attribute{
-			{Key: "dir", Val: "auto"},
-			{Key: "style", Val: "font-size:14px"},
-		},
+		Attr:     innerAttrs,
 	}
 	for _, c := range children {
 		inner.AppendChild(c)
@@ -1073,6 +1142,15 @@ func rewritePToFeishuDiv(n *xhtml.Node, rep *Report) {
 		Severity:  SeverityWarning,
 		TagOrAttr: "p",
 		Excerpt:   excerptOf(n),
-		Hint:      "Rewritten as double-wrapped div paragraph (outer margin/line-height + inner dir/font-size)",
+		Hint:      "Rewritten as double-wrapped div paragraph (outer margin/line-height + additive inner dir/font-size)",
 	})
+}
+
+func attrValueOrDefault(n *xhtml.Node, key, fallback string) string {
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, key) && strings.TrimSpace(attr.Val) != "" {
+			return attr.Val
+		}
+	}
+	return fallback
 }
