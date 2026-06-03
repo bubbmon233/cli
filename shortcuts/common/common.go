@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/larksuite/cli/internal/output"
+	"github.com/larksuite/cli/internal/ratelimit"
 	"github.com/larksuite/cli/internal/util"
 )
 
@@ -166,6 +167,9 @@ func CheckApiError(w io.Writer, result interface{}, action string) bool {
 // HandleApiResult checks for network/API errors and returns the "data" field.
 func HandleApiResult(result interface{}, err error, action string) (map[string]interface{}, error) {
 	if err != nil {
+		if ratelimit.IsLocalRateLimit(err) {
+			return nil, err
+		}
 		return nil, output.Errorf(output.ExitAPI, "api_error", "%s: %s", action, err)
 	}
 	resultMap, _ := result.(map[string]interface{})
