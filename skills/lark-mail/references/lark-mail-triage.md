@@ -109,7 +109,7 @@ lark-cli mail +triage --page-size 10
 ```text
 15 message(s)
 next page: mail +triage --query '合同审批' --page-token 'search:abc123...'
-tip: use mail +message --message-id <id> to read full content
+tip: read full content: single message use mail +message --message-id <id>; multiple messages use mail +messages --message-ids <id1,id2,...>
 ```
 
 ### 搜索分页注意事项
