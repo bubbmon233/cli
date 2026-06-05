@@ -48,9 +48,8 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 
 	help := stdout.String()
 	for _, want := range []string{
-		"Internally calls messages.batch_get",
-		"chunks execution by 20 IDs and merges output",
-		"OAPI Meta/gateway config allows up to 20 IDs per call",
+		"multiple emails by message ID",
+		"handles them in batches of 20 and merges output",
 		"Comma-separated email message IDs",
 		"You may pass more than 20 IDs",
 	} {
@@ -58,8 +57,10 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 			t.Fatalf("help missing %q\n%s", want, help)
 		}
 	}
-	if strings.Contains(help, "50 IDs") || strings.Contains(help, "50 个") {
-		t.Fatalf("help must not describe 50 as the batch_get limit\n%s", help)
+	for _, disallowed := range []string{"messages.batch_get", "OAPI Meta", "gateway config", "50 IDs", "50 个"} {
+		if strings.Contains(help, disallowed) {
+			t.Fatalf("help must not expose internal wording %q\n%s", disallowed, help)
+		}
 	}
 }
 
@@ -79,7 +80,6 @@ func TestMailMessagesDryRunMentionsBatchGetChunkingAndMerge(t *testing.T) {
 
 	out := stdout.String()
 	for _, want := range []string{
-		"messages.batch_get",
 		"chunks every 20 IDs",
 		"merges output",
 	} {
