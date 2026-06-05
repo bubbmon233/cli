@@ -30,7 +30,7 @@ var MailMessages = common.Shortcut{
 	HasFormat:   true,
 	Flags: []common.Flag{
 		{Name: "mailbox", Default: "me", Desc: "email address (default: me)"},
-		{Name: "message-ids", Desc: `Required. Comma-separated email message IDs. You may pass more than 20 IDs; the CLI chunks requests by 20 IDs and merges output. Example: "id1,id2,id3"`, Required: true},
+		{Name: "message-ids", Desc: `Required. Comma-separated email message IDs. You may pass more than 20 IDs; the CLI chunks requests by 20 IDs and merges output. Example: "<id1>,<id2>,<id3>"`, Required: true},
 		{Name: "html", Type: "bool", Default: "true", Desc: "Whether to return HTML body (false returns plain text only to save bandwidth)"},
 		{Name: "print-output-schema", Type: "bool", Desc: "Print output field reference (run this first to learn field names before parsing output)"},
 	},

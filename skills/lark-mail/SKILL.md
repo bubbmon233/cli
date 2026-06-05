@@ -347,7 +347,7 @@ lark-cli mail +reply --message-id <id> --body '收到，谢谢'
 
 ### 读取邮件：按需控制返回内容
 
-`+message`、`+messages`、`+thread` 默认返回 HTML 正文（`--html=true`）。`+message` 只适合单个 `message_id`；多个已知 `message_id` 请一次性传给 `+messages --message-ids id1,id2,id3`。仅需确认操作结果（如验证标记已读、移动文件夹是否成功）时，用 `--html=false` 跳过 HTML 正文，只返回纯文本，显著减少 token 消耗。
+`+message`、`+messages`、`+thread` 默认返回 HTML 正文（`--html=true`）。`+message` 只适合单个 `message_id`；多个已知 `message_id` 请一次性传给 `+messages --message-ids <id1>,<id2>,<id3>`。仅需确认操作结果（如验证标记已读、移动文件夹是否成功）时，用 `--html=false` 跳过 HTML 正文，只返回纯文本，显著减少 token 消耗。
 
 输出默认为结构化 JSON，可直接读取，无需额外编码转换。
 
@@ -359,7 +359,7 @@ lark-cli mail +message --message-id <id> --html=false
 lark-cli mail +message --message-id <id>
 
 # ✅ 已有多个 message_id：批量读取，避免循环调用 +message
-lark-cli mail +messages --message-ids id1,id2,id3 --html=false
+lark-cli mail +messages --message-ids <id1>,<id2>,<id3> --html=false
 ```
 
 ### 邮件模板（`+template-create` / `+template-update` / `--template-id`）
