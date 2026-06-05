@@ -4,7 +4,7 @@
 
 通过传入逗号分隔的 `message_id` 列表，一次性读取多封邮件的完整内容。
 
-本 shortcut 内部调用 `messages.batch_get`，不是 `page_token` 分页命令。OAPI Meta / 网关配置中 `message_ids` 的单次请求上限是 20 个 `message_id`；CLI 按 20 个 ID 拆批执行并合并输出。因此超过 20 个 ID 可以直接传入 CLI，不需要手动分页，也不要逐封循环调用 `+message`。
+本 shortcut 内部调用 `messages.batch_get`。OAPI Meta / 网关配置中 `message_ids` 的单次请求上限是 20 个 `message_id`；CLI 按 20 个 ID 拆批执行并合并输出。因此超过 20 个 ID 可以直接传入 CLI，不需要手动拆批，也不要逐封循环调用 `+message`。
 
 本 shortcut 是 `mail +message` 的批量版本。每个返回的 `messages[]` 项使用与 `+message` 相同的归一化结构：安全元数据字段直接透传，正文和辅助字段由 shortcut 派生。
 
@@ -40,7 +40,7 @@ lark-cli mail +messages --message-ids id1,id2 --dry-run
 
 | 参数 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--message-ids id1,id2,id3` | 是 | — | 逗号分隔的邮件 ID 列表；不是 page token；超过 20 个 ID 时 CLI 自动按 20 拆批并合并输出 |
+| `--message-ids id1,id2,id3` | 是 | — | 逗号分隔的邮件 ID 列表；超过 20 个 ID 时 CLI 自动按 20 拆批并合并输出 |
 | `--mailbox <email>` | 否 | 当前用户 | 邮箱地址（`user_mailbox_id`） |
 | `--html` | 否 | true | 是否返回 HTML 正文（`false` 仅返回纯文本，减少带宽） |
 | `--format <mode>` | 否 | json | 输出格式：`json`（默认）/ `pretty` / `table` / `ndjson` / `csv` |
@@ -76,8 +76,7 @@ lark-cli mail +messages --message-ids id1,id2 --dry-run
 
 - **JSON 输出可直接使用**，可直接读取，无需额外编码转换。
 - 只需读取一封邮件时请使用 `+message`。
-- `--message-ids` 不是 `page_token` 分页参数；它会作为 `messages.batch_get` 的 `message_ids` 请求体字段。
-- OAPI Meta / 网关配置中 `messages.batch_get` 单次请求上限为 20 个 ID；CLI 每 20 个 ID 拆成一次调用并合并输出，不要为大列表手动分页。
+- OAPI Meta / 网关配置中 `messages.batch_get` 单次请求上限为 20 个 ID；CLI 每 20 个 ID 拆成一次调用并合并输出，不需要为大列表手动拆请求。
 - JSON 输出中 `messages[].body_html` 里的 `<` / `>` 可能显示为 `\u003c` / `\u003e`（JSON 安全转义，内容不变，`jq -r` 可还原）。
 - `mail +messages` 仅返回附件元数据。如后续步骤需要下载 URL，请针对特定的 `message_id` 和 `attachment_ids` 调用原生附件 URL API。
 - 与 `+message` 一样，普通附件和内嵌图片都出现在 `messages[].attachments[]` 中，使用同一个 `user_mailbox.message.attachments download_url` API。

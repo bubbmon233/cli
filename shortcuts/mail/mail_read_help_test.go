@@ -51,8 +51,7 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 		"Internally calls messages.batch_get",
 		"chunks execution by 20 IDs and merges output",
 		"OAPI Meta/gateway config allows up to 20 IDs per call",
-		"not page_token pagination",
-		"Comma-separated email message IDs, not a page token",
+		"Comma-separated email message IDs",
 		"You may pass more than 20 IDs",
 	} {
 		if !strings.Contains(help, want) {
