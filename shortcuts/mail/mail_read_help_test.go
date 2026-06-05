@@ -50,7 +50,7 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 	for _, want := range []string{
 		"Internally calls messages.batch_get",
 		"chunks execution by 20 IDs and merges output",
-		"backend current single-request limit is 50 IDs",
+		"OAPI Meta/gateway config allows up to 20 IDs per call",
 		"not page_token pagination",
 		"Comma-separated email message IDs, not a page token",
 		"You may pass more than 20 IDs",
@@ -59,8 +59,8 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 			t.Fatalf("help missing %q\n%s", want, help)
 		}
 	}
-	if strings.Contains(strings.ToLower(help), "backend") && strings.Contains(strings.ToLower(help), "limit is 20") {
-		t.Fatalf("help must not describe 20 as the backend limit\n%s", help)
+	if strings.Contains(help, "50 IDs") || strings.Contains(help, "50 个") {
+		t.Fatalf("help must not describe 50 as the batch_get limit\n%s", help)
 	}
 }
 

@@ -23,7 +23,7 @@ type mailMessagesOutput struct {
 var MailMessages = common.Shortcut{
 	Service:     "mail",
 	Command:     "+messages",
-	Description: "Use when reading full content for multiple emails by message ID. Internally calls messages.batch_get; the CLI currently chunks execution by 20 IDs and merges output. The backend current single-request limit is 50 IDs. This is not page_token pagination.",
+	Description: "Use when reading full content for multiple emails by message ID. Internally calls messages.batch_get; OAPI Meta/gateway config allows up to 20 IDs per call, so the CLI chunks execution by 20 IDs and merges output. This is not page_token pagination.",
 	Risk:        "read",
 	Scopes:      []string{"mail:user_mailbox.message:readonly", "mail:user_mailbox.message.address:read", "mail:user_mailbox.message.subject:read", "mail:user_mailbox.message.body:read"},
 	AuthTypes:   []string{"user", "bot"},
