@@ -66,9 +66,13 @@ func TestMailMessagesHelpClarifiesBatchGetChunkingAndLimits(t *testing.T) {
 
 func TestMailMessagesDryRunMentionsBatchGetChunkingAndMerge(t *testing.T) {
 	f, stdout, _, _ := mailShortcutTestFactory(t)
+	messageIDs := []string{
+		validMessageIDForTest("dry-run-1"),
+		validMessageIDForTest("dry-run-2"),
+	}
 
 	err := runMountedMailShortcut(t, MailMessages, []string{
-		"+messages", "--message-ids", "msg_1,msg_2", "--dry-run", "--format", "json",
+		"+messages", "--message-ids", strings.Join(messageIDs, ","), "--dry-run", "--format", "json",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("dry-run returned error: %v", err)
@@ -142,7 +146,7 @@ func TestMailMessagesExecuteChunksTwentyOneIDsIntoTwoBatchGetCalls(t *testing.T)
 
 	ids := make([]string, 21)
 	for i := range ids {
-		ids[i] = fmt.Sprintf("msg_%02d", i+1)
+		ids[i] = validMessageIDForTest(fmt.Sprintf("batch-%02d", i+1))
 	}
 	err := runMountedMailShortcut(t, MailMessages, []string{
 		"+messages", "--message-ids", strings.Join(ids, ","),
