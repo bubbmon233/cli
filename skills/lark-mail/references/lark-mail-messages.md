@@ -21,26 +21,26 @@
 
 ```bash
 # 读取多封邮件（默认包含 HTML 正文）
-lark-cli mail +messages --message-ids <id1>,<id2>,<id3>
+lark-cli mail +messages --message-ids id1,id2,id3
 
 # 仅纯文本正文（更小的负载，适合 AI 处理）
-lark-cli mail +messages --message-ids <id1>,<id2>,<id3> --html=false
+lark-cli mail +messages --message-ids id1,id2,id3 --html=false
 
 # 指定邮箱
-lark-cli mail +messages --mailbox user@example.com --message-ids <id1>,<id2>
+lark-cli mail +messages --mailbox user@example.com --message-ids id1,id2
 
 # JSON 输出
-lark-cli mail +messages --message-ids <id1>,<id2> --format json
+lark-cli mail +messages --message-ids id1,id2 --format json
 
 # Dry Run
-lark-cli mail +messages --message-ids <id1>,<id2> --dry-run
+lark-cli mail +messages --message-ids id1,id2 --dry-run
 ```
 
 ## 参数
 
 | 参数 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--message-ids <id1,id2,...>` | 是 | — | 逗号分隔的邮件 ID 列表；不是 page token；超过 20 个 ID 时 CLI 自动按 20 拆批并合并输出 |
+| `--message-ids id1,id2,id3` | 是 | — | 逗号分隔的邮件 ID 列表；不是 page token；超过 20 个 ID 时 CLI 自动按 20 拆批并合并输出 |
 | `--mailbox <email>` | 否 | 当前用户 | 邮箱地址（`user_mailbox_id`） |
 | `--html` | 否 | true | 是否返回 HTML 正文（`false` 仅返回纯文本，减少带宽） |
 | `--format <mode>` | 否 | json | 输出格式：`json`（默认）/ `pretty` / `table` / `ndjson` / `csv` |
@@ -88,7 +88,7 @@ lark-cli mail +messages --message-ids <id1>,<id2> --dry-run
 
 ```bash
 # 一次性读取多封邮件
-lark-cli mail +messages --message-ids <id1>,<id2>,<id3> --html=false --format json
+lark-cli mail +messages --message-ids id1,id2,id3 --html=false --format json
 
 # 让 LLM 分析 .data.messages[].body_plain_text 并生成分组摘要
 ```
@@ -97,7 +97,7 @@ lark-cli mail +messages --message-ids <id1>,<id2>,<id3> --html=false --format js
 
 ```bash
 # 获取多封邮件的归一化输出
-lark-cli mail +messages --message-ids <id1>,<id2> --html=false --format json
+lark-cli mail +messages --message-ids id1,id2 --html=false --format json
 
 # 检查 subject/from/body_preview 或 body_plain_text，对比意图和下一步操作
 ```

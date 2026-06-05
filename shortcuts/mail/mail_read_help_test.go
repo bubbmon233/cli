@@ -105,8 +105,8 @@ func TestMailTriageTableHintRoutesSingleAndMultipleReads(t *testing.T) {
 	errOut := stderr.String()
 	for _, want := range []string{
 		"tip: read full content:",
-		"single message use mail +message --message-id <id>",
-		"multiple messages use mail +messages --message-ids <id1,id2,...>",
+		"single message use mail +message --message-id id1",
+		"multiple messages use mail +messages --message-ids id1,id2,id3",
 	} {
 		if !strings.Contains(errOut, want) {
 			t.Fatalf("stderr missing %q\n%s", want, errOut)
