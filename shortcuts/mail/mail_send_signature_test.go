@@ -229,6 +229,7 @@ func TestMailSendDryRunShowsSignatureLookupUnlessDisabled(t *testing.T) {
 		t.Fatalf("default dry-run should include signatures lookup:\n%s", stdout.String())
 	}
 
+	stdout.Reset()
 	if err := runMountedMailShortcut(t, MailSend, []string{
 		"+send",
 		"--to", "bob@example.com",
