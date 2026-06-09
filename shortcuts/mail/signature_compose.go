@@ -19,6 +19,7 @@ import (
 	"github.com/larksuite/cli/shortcuts/mail/emlbuilder"
 	"github.com/larksuite/cli/shortcuts/mail/signature"
 	nethtml "golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // signatureFlag is the common flag definition for --signature-id, shared by all compose shortcuts.
@@ -160,8 +161,9 @@ func appendPlainTextSignature(textBody string, sig *signatureResult) string {
 
 func signatureHTMLToPlainText(htmlText string) string {
 	nodes, err := nethtml.ParseFragment(strings.NewReader(htmlText), &nethtml.Node{
-		Type: nethtml.ElementNode,
-		Data: "div",
+		Type:     nethtml.ElementNode,
+		DataAtom: atom.Body,
+		Data:     "body",
 	})
 	if err != nil {
 		return strings.TrimSpace(stdhtml.UnescapeString(htmlText))

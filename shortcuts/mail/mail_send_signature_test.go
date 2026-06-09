@@ -124,14 +124,6 @@ func TestMailSendDefaultSignatureLookupFailureDowngrades(t *testing.T) {
 func TestMailSendNoSignatureSkipsDefaultLookup(t *testing.T) {
 	f, stdout, stderr, reg := mailShortcutTestFactoryWithSendScope(t)
 	mailboxID := "mb-no-signature"
-	reg.Register(&httpmock.Stub{
-		Method: "GET",
-		URL:    "/user_mailboxes/" + mailboxID + "/settings/signatures",
-		Body: map[string]interface{}{
-			"code": 999,
-			"msg":  "should not be called",
-		},
-	})
 	draftStub := registerDraftCreateForMailbox(reg, mailboxID)
 
 	err := runMountedMailShortcut(t, MailSend, []string{
