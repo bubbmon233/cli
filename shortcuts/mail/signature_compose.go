@@ -102,6 +102,11 @@ func resolveDefaultSendSignatureID(runtime *common.RuntimeContext, mailboxID, se
 		return "", err
 	}
 	candidates := []string{senderEmail}
+	if strings.TrimSpace(senderEmail) == "" {
+		if _, resolvedEmail := resolveSenderInfo(runtime, mailboxID, ""); resolvedEmail != "" {
+			candidates = append(candidates, resolvedEmail)
+		}
+	}
 	if mailboxID != "" && mailboxID != "me" {
 		candidates = append(candidates, mailboxID)
 	}
@@ -185,6 +190,8 @@ func appendHTMLNodeText(b *strings.Builder, n *nethtml.Node) {
 			writePlainTextNewline(b)
 			return
 		case "img":
+			return
+		case "script", "style", "head", "template", "noscript":
 			return
 		case "a":
 			var child strings.Builder
