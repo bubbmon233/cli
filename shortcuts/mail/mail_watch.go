@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,8 +23,6 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
-	"github.com/larksuite/cli/errs"
-	"github.com/larksuite/cli/internal/client"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/validate"
@@ -188,7 +187,7 @@ var MailWatch = common.Shortcut{
 		switch outFormat {
 		case "json", "data", "":
 		default:
-			return mailValidationParamError("--format", "invalid --format %q: must be json or data", outFormat)
+			return output.ErrValidation("invalid --format %q: must be json or data", outFormat)
 		}
 		msgFormat := runtime.Str("msg-format")
 		outputDir := runtime.Str("output-dir")
@@ -197,18 +196,18 @@ var MailWatch = common.Shortcut{
 			// literal relative path (creating a directory named "~"), which is
 			// confusing. This also covers ~user/path forms.
 			if strings.HasPrefix(outputDir, "~") {
-				return mailValidationParamError("--output-dir", "--output-dir does not support ~ expansion; use a relative path like ./output instead")
+				return output.ErrValidation("--output-dir does not support ~ expansion; use a relative path like ./output instead")
 			}
 			// Enforce CWD containment: reject absolute paths, path traversal,
 			// and symlink escapes. SafeOutputPath returns a resolved absolute path
 			// under CWD, preventing writes to arbitrary system directories.
 			safePath, err := validate.SafeOutputPath(outputDir)
 			if err != nil {
-				return mailValidationParamError("--output-dir", "invalid --output-dir %q: %v", outputDir, err).WithCause(err)
+				return err
 			}
 			outputDir = safePath
 			if err := vfs.MkdirAll(outputDir, 0700); err != nil {
-				return mailFileIOError("cannot create output directory %q: %v", err, outputDir, err)
+				return fmt.Errorf("cannot create output directory %q: %w", outputDir, err)
 			}
 		}
 		labelIDsInput := runtime.Str("label-ids")
@@ -247,7 +246,7 @@ var MailWatch = common.Shortcut{
 
 		// Step 1: subscribe mailbox events (required before WebSocket pushes mail events)
 		info(fmt.Sprintf("Subscribing mailbox events for: %s", mailbox))
-		_, err = runtime.CallAPITyped("POST", mailboxPath(mailbox, "event", "subscribe"), nil, map[string]interface{}{"event_type": 1})
+		_, err = runtime.CallAPI("POST", mailboxPath(mailbox, "event", "subscribe"), nil, map[string]interface{}{"event_type": 1})
 		if err != nil {
 			return wrapWatchSubscribeError(err)
 		}
@@ -257,7 +256,7 @@ var MailWatch = common.Shortcut{
 		var unsubErr error
 		unsubscribe := func() error {
 			unsubOnce.Do(func() {
-				_, unsubErr = runtime.CallAPITyped("POST", mailboxPath(mailbox, "event", "unsubscribe"), nil, map[string]interface{}{"event_type": 1})
+				_, unsubErr = runtime.CallAPI("POST", mailboxPath(mailbox, "event", "unsubscribe"), nil, map[string]interface{}{"event_type": 1})
 			})
 			return unsubErr
 		}
@@ -486,7 +485,7 @@ var MailWatch = common.Shortcut{
 				if watchCtx.Err() != nil {
 					return nil
 				}
-				return errs.NewNetworkError(errs.SubtypeNetworkTransport, "WebSocket connection failed: %v", err).WithCause(err)
+				return output.ErrNetwork("WebSocket connection failed: %v", err)
 			}
 			return nil
 		}
@@ -509,7 +508,7 @@ func parseJSONArrayFlag(input, flagName string) ([]string, error) {
 	}
 	var values []string
 	if err := json.Unmarshal([]byte(trimmed), &values); err != nil {
-		return nil, mailValidationParamError("--"+flagName, "invalid --%s: expected JSON array of strings, e.g. [\"INBOX\",\"SENT\"]", flagName).WithCause(err)
+		return nil, output.ErrValidation("invalid --%s: expected JSON array of strings, e.g. [\"INBOX\",\"SENT\"]", flagName)
 	}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
@@ -714,12 +713,18 @@ func fetchMessageForWatch(runtime *common.RuntimeContext, mailbox, messageID, fo
 		QueryParams: queryParams,
 	})
 	if err != nil {
-		return nil, client.WrapDoAPIError(err)
-	}
-	data, err := runtime.ClassifyAPIResponse(apiResp)
-	if err != nil {
 		return nil, err
 	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(apiResp.RawBody, &result); err != nil {
+		return nil, err
+	}
+	if code, _ := result["code"].(float64); code != 0 {
+		msg, _ := result["msg"].(string)
+		return nil, fmt.Errorf("[%.0f] %s", code, msg)
+	}
+	data, _ := result["data"].(map[string]interface{})
 	msg, _ := data["message"].(map[string]interface{})
 	if msg == nil {
 		return data, nil
@@ -743,40 +748,29 @@ func wrapWatchSubscribeError(err error) error {
 		return nil
 	}
 	hint := "ensure the app has scope mail:event and the event mail.user_mailbox.event.message_received_v1 is enabled"
-	if p, ok := errs.ProblemOf(err); ok {
-		p.Message = "subscribe mailbox events failed: " + p.Message
-		if strings.TrimSpace(p.Hint) != "" {
-			p.Hint = p.Hint + "; " + hint
-		} else {
-			p.Hint = hint
+	if exitErr, ok := err.(*output.ExitError); ok && exitErr.Detail != nil {
+		msg := "subscribe mailbox events failed: " + exitErr.Detail.Message
+		if exitErr.Detail.Hint != "" {
+			hint = exitErr.Detail.Hint + "; " + hint
 		}
-		return err
+		return output.ErrWithHint(exitErr.Code, exitErr.Detail.Type, msg, hint)
 	}
-	return errs.NewAPIError(errs.SubtypeUnknown, "subscribe mailbox events failed: %v", err).WithHint("%s", hint).WithCause(err)
+	return output.ErrWithHint(output.ExitAPI, "api_error", fmt.Sprintf("subscribe mailbox events failed: %v", err), hint)
 }
 
 // enhanceProfileError wraps a profile API error with actionable hints.
 // Permission errors get a scope-specific hint; other errors (network, 5xx)
 // are reported as-is so diagnostics aren't misleading.
 func enhanceProfileError(err error) error {
-	if p, ok := errs.ProblemOf(err); ok {
-		lower := strings.ToLower(p.Message)
-		if p.Category == errs.CategoryAuthorization {
-			p.Message = "unable to resolve mailbox address: " + p.Message
-			p.Hint = "run `lark-cli auth login --scope \"mail:user_mailbox:readonly\"` to grant mailbox profile access"
-			return err
-		}
-		if strings.Contains(lower, "permission") || strings.Contains(lower, "scope") {
-			permErr := errs.NewPermissionError(errs.SubtypeMissingScope, "unable to resolve mailbox address: %s", p.Message).
-				WithHint("run `lark-cli auth login --scope \"mail:user_mailbox:readonly\"` to grant mailbox profile access").
-				WithCause(err)
-			if p.Code != 0 {
-				permErr = permErr.WithCode(p.Code)
-			}
-			if p.LogID != "" {
-				permErr = permErr.WithLogID(p.LogID)
-			}
-			return permErr
+	var exitErr *output.ExitError
+	if errors.As(err, &exitErr) && exitErr.Detail != nil {
+		errType := exitErr.Detail.Type
+		lower := strings.ToLower(exitErr.Detail.Message)
+		if errType == "permission" || errType == "missing_scope" ||
+			strings.Contains(lower, "permission") || strings.Contains(lower, "scope") {
+			return output.ErrWithHint(output.ExitAuth, "missing_scope",
+				"unable to resolve mailbox address: "+exitErr.Detail.Message,
+				"run `lark-cli auth login --scope \"mail:user_mailbox:readonly\"` to grant mailbox profile access")
 		}
 	}
 	// Preserve original error (and its exit code) for non-permission failures.

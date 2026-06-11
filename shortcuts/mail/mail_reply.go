@@ -137,7 +137,7 @@ var MailReply = common.Shortcut{
 		}
 		sourceMsg, err := fetchComposeSourceMessage(runtime, mailboxID, messageId)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to fetch original message")
+			return fmt.Errorf("failed to fetch original message: %w", err)
 		}
 		orig := sourceMsg.Original
 		stripLargeAttachmentCard(&orig)
@@ -213,7 +213,7 @@ var MailReply = common.Shortcut{
 
 		useHTML := !plainText && (bodyIsHTML(body) || bodyIsHTML(orig.bodyRaw) || sigResult != nil)
 		if strings.TrimSpace(inlineFlag) != "" && !useHTML {
-			return mailValidationParamError("--inline", "--inline requires HTML mode, but neither the new body nor the original message contains HTML")
+			return fmt.Errorf("--inline requires HTML mode, but neither the new body nor the original message contains HTML")
 		}
 		var bodyStr string
 		if useHTML {
@@ -264,7 +264,7 @@ var MailReply = common.Shortcut{
 		lintApplied, lintBlocked := emptyLintEnvelopeFields()
 		if useHTML {
 			if err := validateInlineImageURLs(sourceMsg); err != nil {
-				return mailDecorateProblemMessage(err, "HTML reply blocked")
+				return fmt.Errorf("HTML reply blocked: %w", err)
 			}
 			var srcCIDs []string
 			bld, srcCIDs, srcInlineBytes, err = addInlineImagesToBuilder(runtime, bld, sourceMsg.InlineImages)
@@ -273,7 +273,7 @@ var MailReply = common.Shortcut{
 			}
 			resolved, refs, resolveErr := draftpkg.ResolveLocalImagePaths(bodyStr)
 			if resolveErr != nil {
-				return mailValidationError("failed to resolve local image paths: %v", resolveErr).WithCause(resolveErr)
+				return resolveErr
 			}
 			bodyWithSig := resolved
 			if sigResult != nil {
@@ -336,12 +336,12 @@ var MailReply = common.Shortcut{
 		}
 		rawEML, err := bld.BuildBase64URL()
 		if err != nil {
-			return mailValidationError("failed to build EML: %v", err).WithCause(err)
+			return fmt.Errorf("failed to build EML: %w", err)
 		}
 
 		draftResult, err := draftpkg.CreateWithRaw(runtime, mailboxID, rawEML)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to create draft")
+			return fmt.Errorf("failed to create draft: %w", err)
 		}
 		showLintDetails := runtime.Bool("show-lint-details")
 		if !confirmSend {
@@ -354,7 +354,7 @@ var MailReply = common.Shortcut{
 		}
 		resData, err := draftpkg.Send(runtime, mailboxID, draftResult.DraftID, sendTime)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to send reply (draft %s created but not sent)", draftResult.DraftID)
+			return fmt.Errorf("failed to send reply (draft %s created but not sent): %w", draftResult.DraftID, err)
 		}
 		out := buildDraftSendOutput(resData, mailboxID)
 		applyLintToEnvelope(out, lintApplied, lintBlocked, showLintDetails)

@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
 	"github.com/larksuite/cli/shortcuts/mail/lint"
@@ -55,18 +54,10 @@ var MailLintHTML = common.Shortcut{
 		// Mutual exclusion + exactly-one-of validation for --body / --body-file.
 		bodyEmpty := strings.TrimSpace(body) == ""
 		if bodyEmpty && bodyFile == "" {
-			return mailValidationError("exactly one of --body or --body-file is required").
-				WithParams(
-					mailInvalidParam("--body", "required when --body-file is empty"),
-					mailInvalidParam("--body-file", "required when --body is empty"),
-				)
+			return output.ErrValidation("exactly one of --body or --body-file is required")
 		}
 		if !bodyEmpty && bodyFile != "" {
-			return mailValidationError("--body and --body-file are mutually exclusive; pass exactly one").
-				WithParams(
-					mailInvalidParam("--body", "mutually exclusive with --body-file"),
-					mailInvalidParam("--body-file", "mutually exclusive with --body"),
-				)
+			return output.ErrValidation("--body and --body-file are mutually exclusive; pass exactly one")
 		}
 
 		// --body-file safety: cwd-subtree only. Mirrors the existing pattern
@@ -74,7 +65,7 @@ var MailLintHTML = common.Shortcut{
 		// runtime.ValidatePath.
 		if bodyFile != "" {
 			if err := runtime.ValidatePath(bodyFile); err != nil {
-				return mailValidationParamError("--body-file", "--body-file: %v", err).WithCause(err)
+				return output.ErrValidation("--body-file: %v", err)
 			}
 		}
 
@@ -150,7 +141,7 @@ func readLintHTMLBody(runtime *common.RuntimeContext) (string, error) {
 	path := strings.TrimSpace(runtime.Str("body-file"))
 	if path == "" {
 		// Should be unreachable given Validate, but defensive.
-		return "", errs.NewInternalError(errs.SubtypeUnknown, "internal: --body-file empty after Validate")
+		return "", output.ErrValidation("internal: --body-file empty after Validate")
 	}
 	return readBodyFile(runtime.FileIO(), path)
 }

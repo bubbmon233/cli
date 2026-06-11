@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
 	draftpkg "github.com/larksuite/cli/shortcuts/mail/draft"
 	"github.com/larksuite/cli/shortcuts/mail/emlbuilder"
@@ -90,7 +91,7 @@ var MailDraftCreate = common.Shortcut{
 			return err
 		}
 		if !hasTemplate && strings.TrimSpace(runtime.Str("subject")) == "" {
-			return mailValidationParamError("--subject", "--subject is required; pass the final email subject (or use --template-id)")
+			return output.ErrValidation("--subject is required; pass the final email subject (or use --template-id)")
 		}
 		if err := validateSignatureWithPlainText(runtime.Bool("plain-text"), runtime.Str("signature-id")); err != nil {
 			return err
@@ -175,10 +176,10 @@ var MailDraftCreate = common.Shortcut{
 			})
 		}
 		if strings.TrimSpace(input.Subject) == "" {
-			return mailValidationParamError("--subject", "effective subject is empty after applying template; pass --subject explicitly")
+			return output.ErrValidation("effective subject is empty after applying template; pass --subject explicitly")
 		}
 		if strings.TrimSpace(input.Body) == "" {
-			return mailValidationParamError("--body", "effective body is empty after applying template; pass --body explicitly")
+			return output.ErrValidation("effective body is empty after applying template; pass --body explicitly")
 		}
 		sigResult, err := resolveSignature(ctx, runtime, mailboxID, runtime.Str("signature-id"), runtime.Str("from"))
 		if err != nil {
@@ -191,7 +192,7 @@ var MailDraftCreate = common.Shortcut{
 		}
 		draftResult, err := draftpkg.CreateWithRaw(runtime, mailboxID, rawEML)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "create draft failed")
+			return fmt.Errorf("create draft failed: %w", err)
 		}
 		out := map[string]interface{}{"draft_id": draftResult.DraftID}
 		if draftResult.Reference != "" {
@@ -249,7 +250,7 @@ func buildRawEMLForDraftCreate(
 
 	senderEmail := resolveComposeSenderEmail(runtime)
 	if senderEmail == "" {
-		return "", lintApplied, lintBlocked, mailValidationParamError("--from", "unable to determine sender email; please specify --from explicitly")
+		return "", lintApplied, lintBlocked, fmt.Errorf("unable to determine sender email; please specify --from explicitly")
 	}
 
 	if err := validateRecipientCount(input.To, input.CC, input.BCC); err != nil {
@@ -284,7 +285,7 @@ func buildRawEMLForDraftCreate(
 	}
 	inlineSpecs, parseErr := parseInlineSpecs(input.Inline)
 	if parseErr != nil {
-		return "", lintApplied, lintBlocked, parseErr
+		return "", lintApplied, lintBlocked, output.ErrValidation("%v", parseErr)
 	}
 	var autoResolvedPaths []string
 	var composedHTMLBody string
@@ -299,7 +300,7 @@ func buildRawEMLForDraftCreate(
 		}
 		resolved, refs, resolveErr := draftpkg.ResolveLocalImagePaths(htmlBody)
 		if resolveErr != nil {
-			return "", lintApplied, lintBlocked, mailValidationError("failed to resolve local image paths: %v", resolveErr).WithCause(resolveErr)
+			return "", lintApplied, lintBlocked, resolveErr
 		}
 		resolved = injectSignatureIntoBody(resolved, sigResult)
 		// Writing-path lint: AutoFix=true / Strict=false — the writing-path
@@ -364,7 +365,7 @@ func buildRawEMLForDraftCreate(
 	}
 	rawEML, buildErr := bld.BuildBase64URL()
 	if buildErr != nil {
-		return "", lintApplied, lintBlocked, mailValidationError("build EML failed: %v", buildErr).WithCause(buildErr)
+		return "", lintApplied, lintBlocked, output.ErrValidation("build EML failed: %v", buildErr)
 	}
 	return rawEML, lintApplied, lintBlocked, nil
 }

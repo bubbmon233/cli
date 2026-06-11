@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
 	draftpkg "github.com/larksuite/cli/shortcuts/mail/draft"
 	"github.com/larksuite/cli/shortcuts/mail/emlbuilder"
@@ -82,7 +83,7 @@ var MailSend = common.Shortcut{
 			return err
 		}
 		if !hasTemplate && strings.TrimSpace(runtime.Str("subject")) == "" {
-			return mailValidationParamError("--subject", "--subject is required; pass the final email subject (or use --template-id)")
+			return output.ErrValidation("--subject is required; pass the final email subject (or use --template-id)")
 		}
 		// With --template-id, tos/ccs/bccs may come from the template, so
 		// defer the at-least-one-recipient check to Execute (after
@@ -240,7 +241,7 @@ var MailSend = common.Shortcut{
 			}
 			resolved, refs, resolveErr := draftpkg.ResolveLocalImagePaths(htmlBody)
 			if resolveErr != nil {
-				return mailValidationError("failed to resolve local image paths: %v", resolveErr).WithCause(resolveErr)
+				return resolveErr
 			}
 			resolved = injectSignatureIntoBody(resolved, sigResult)
 			// Writing-path lint: AutoFix=true / Strict=false — the writing-path
@@ -307,12 +308,12 @@ var MailSend = common.Shortcut{
 
 		rawEML, err := bld.BuildBase64URL()
 		if err != nil {
-			return mailValidationError("failed to build EML: %v", err).WithCause(err)
+			return fmt.Errorf("failed to build EML: %w", err)
 		}
 
 		draftResult, err := draftpkg.CreateWithRaw(runtime, mailboxID, rawEML)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to create draft")
+			return fmt.Errorf("failed to create draft: %w", err)
 		}
 		showLintDetails := runtime.Bool("show-lint-details")
 		if !confirmSend {
@@ -325,7 +326,7 @@ var MailSend = common.Shortcut{
 		}
 		resData, err := draftpkg.Send(runtime, mailboxID, draftResult.DraftID, sendTime)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to send email (draft %s created but not sent)", draftResult.DraftID)
+			return fmt.Errorf("failed to send email (draft %s created but not sent): %w", draftResult.DraftID, err)
 		}
 		out := buildDraftSendOutput(resData, mailboxID)
 		applyLintToEnvelope(out, lintApplied, lintBlocked, showLintDetails)

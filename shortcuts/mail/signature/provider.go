@@ -5,9 +5,9 @@ package signature
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 
-	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
@@ -27,19 +27,19 @@ func ListAll(runtime *common.RuntimeContext, mailboxID string) (*GetSignaturesRe
 		return cached, nil
 	}
 
-	data, err := runtime.CallAPITyped("GET", signaturesPath(mailboxID), nil, nil)
+	data, err := runtime.CallAPI("GET", signaturesPath(mailboxID), nil, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get signatures: %w", err)
 	}
 
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return nil, errs.NewInternalError(errs.SubtypeSDKError, "get signatures: marshal response: %v", err).WithCause(err)
+		return nil, fmt.Errorf("get signatures: marshal response: %w", err)
 	}
 
 	var resp GetSignaturesResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, errs.NewInternalError(errs.SubtypeInvalidResponse, "get signatures: unmarshal response: %v", err).WithCause(err)
+		return nil, fmt.Errorf("get signatures: unmarshal response: %w", err)
 	}
 
 	processCache[mailboxID] = &resp
@@ -66,5 +66,5 @@ func Get(runtime *common.RuntimeContext, mailboxID, signatureID string) (*Signat
 			return &resp.Signatures[i], nil
 		}
 	}
-	return nil, errs.NewValidationError(errs.SubtypeInvalidArgument, "signature not found: %s", signatureID)
+	return nil, fmt.Errorf("signature not found: %s", signatureID)
 }

@@ -5,6 +5,7 @@ package mail
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/larksuite/cli/shortcuts/common"
 )
@@ -47,7 +48,7 @@ var MailMessage = common.Shortcut{
 
 		msg, err := fetchFullMessage(runtime, mailboxID, messageID, html)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "failed to fetch email")
+			return fmt.Errorf("failed to fetch email: %w", err)
 		}
 
 		out := buildMessageOutput(msg, html)

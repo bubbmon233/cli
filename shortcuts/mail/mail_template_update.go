@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
@@ -92,17 +93,13 @@ var MailTemplateUpdate = common.Shortcut{
 			return err
 		}
 		if runtime.Str("template-id") == "" {
-			return mailValidationParamError("--template-id", "--template-id is required (or use --print-patch-template to print the patch skeleton)")
+			return output.ErrValidation("--template-id is required (or use --print-patch-template to print the patch skeleton)")
 		}
 		if runtime.Str("set-template-content") != "" && runtime.Str("set-template-content-file") != "" {
-			return mailValidationError("--set-template-content and --set-template-content-file are mutually exclusive").
-				WithParams(
-					mailInvalidParam("--set-template-content", "mutually exclusive with --set-template-content-file"),
-					mailInvalidParam("--set-template-content-file", "mutually exclusive with --set-template-content"),
-				)
+			return output.ErrValidation("--set-template-content and --set-template-content-file are mutually exclusive")
 		}
 		if name := runtime.Str("set-name"); name != "" && len([]rune(name)) > 100 {
-			return mailValidationParamError("--set-name", "--set-name must be at most 100 characters")
+			return output.ErrValidation("--set-name must be at most 100 characters")
 		}
 		return nil
 	},
@@ -174,16 +171,16 @@ var MailTemplateUpdate = common.Shortcut{
 		if pf := strings.TrimSpace(runtime.Str("patch-file")); pf != "" {
 			f, err := runtime.FileIO().Open(pf)
 			if err != nil {
-				return mailValidationParamError("--patch-file", "open --patch-file %s: %v", pf, err).WithCause(mailInputStatError(err))
+				return output.ErrValidation("open --patch-file %s: %v", pf, err)
 			}
 			buf, readErr := io.ReadAll(f)
 			f.Close()
 			if readErr != nil {
-				return mailValidationParamError("--patch-file", "read --patch-file %s: %v", pf, readErr).WithCause(readErr)
+				return output.ErrValidation("read --patch-file %s: %v", pf, readErr)
 			}
 			var patch templatePatchFile
 			if err := json.Unmarshal(buf, &patch); err != nil {
-				return mailValidationParamError("--patch-file", "parse --patch-file %s: %v", pf, err).WithCause(err)
+				return output.ErrValidation("parse --patch-file %s: %v", pf, err)
 			}
 			if patch.TemplateContent != nil {
 				contentChanged = true
@@ -201,7 +198,7 @@ var MailTemplateUpdate = common.Shortcut{
 			tpl.TemplateContent = wrapTemplateContentIfNeeded(tpl.TemplateContent, tpl.IsPlainTextMode)
 		}
 		if int64(len(tpl.TemplateContent)) > maxTemplateContentBytes {
-			return mailFailedPreconditionError("template content exceeds %d MB (got %.1f MB)",
+			return output.ErrValidation("template content exceeds %d MB (got %.1f MB)",
 				maxTemplateContentBytes/(1024*1024),
 				float64(len(tpl.TemplateContent))/1024/1024)
 		}
@@ -281,7 +278,7 @@ var MailTemplateUpdate = common.Shortcut{
 
 		resp, err := updateTemplate(runtime, mailboxID, tid, tpl)
 		if err != nil {
-			return mailDecorateProblemMessage(err, "update template failed")
+			return fmt.Errorf("update template failed: %w", err)
 		}
 		updated, _ := extractTemplatePayload(resp)
 		out := map[string]interface{}{
@@ -315,12 +312,12 @@ func resolveTemplateUpdateContent(runtime *common.RuntimeContext) (content, sour
 	}
 	f, err := runtime.FileIO().Open(path)
 	if err != nil {
-		return "", path, mailValidationParamError("--set-template-content-file", "open --set-template-content-file %s: %v", path, err).WithCause(mailInputStatError(err))
+		return "", path, output.ErrValidation("open --set-template-content-file %s: %v", path, err)
 	}
 	defer f.Close()
 	buf, err := io.ReadAll(f)
 	if err != nil {
-		return "", path, mailValidationParamError("--set-template-content-file", "read --set-template-content-file %s: %v", path, err).WithCause(err)
+		return "", path, output.ErrValidation("read --set-template-content-file %s: %v", path, err)
 	}
 	return string(buf), path, nil
 }

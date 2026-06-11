@@ -395,7 +395,8 @@ func sanitiseStyleAttr(raw string) (cleaned string, dropped []string) {
 	return cleaned, dropped
 }
 
-// hintForBlockedTag returns a hint for an error-blocked tag.
+// hintForBlockedTag returns a hint for an error-blocked tag (matching
+// the `output.ErrWithHint` convention used elsewhere in the cli).
 func hintForBlockedTag(tag string) string {
 	switch tag {
 	case "script":
