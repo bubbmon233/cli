@@ -5,6 +5,7 @@ package mail
 
 import (
 	"encoding/base64"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -32,6 +33,22 @@ func assertValidationError(t *testing.T, err error, wantSubstr string) {
 	}
 	if wantSubstr != "" && !strings.Contains(err.Error(), wantSubstr) {
 		t.Errorf("expected error message to contain %q, got: %v", wantSubstr, err.Error())
+	}
+}
+
+func assertValidationParamError(t *testing.T, err error, wantParam, wantSubstr string) {
+	t.Helper()
+	assertValidationError(t, err, wantSubstr)
+
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected *errs.ValidationError, got %T: %v", err, err)
+	}
+	if validationErr.Subtype != errs.SubtypeInvalidArgument {
+		t.Errorf("subtype = %q, want %q", validationErr.Subtype, errs.SubtypeInvalidArgument)
+	}
+	if validationErr.Param != wantParam {
+		t.Errorf("param = %q, want %q", validationErr.Param, wantParam)
 	}
 }
 
@@ -207,7 +224,7 @@ func TestValidateUserMailboxID(t *testing.T) {
 	} {
 		t.Run("invalid/"+strings.ReplaceAll(mailboxID, "\n", "\\n"), func(t *testing.T) {
 			err := validateUserMailboxID("--mailbox", mailboxID)
-			assertValidationError(t, err, `--mailbox must be "me" or a valid email address`)
+			assertValidationParamError(t, err, "--mailbox", `--mailbox must be "me" or a valid email address`)
 		})
 	}
 }
@@ -219,7 +236,7 @@ func TestMailMessageInvalidMailboxValidationStopsBeforeHTTP(t *testing.T) {
 			err := runMountedMailShortcut(t, MailMessage, []string{
 				"+message", "--as", "user", "--mailbox", mailboxID, "--message-id", "msg_xxx",
 			}, f, stdout)
-			assertValidationError(t, err, `--mailbox must be "me" or a valid email address`)
+			assertValidationParamError(t, err, "--mailbox", `--mailbox must be "me" or a valid email address`)
 			if stdout.Len() != 0 {
 				t.Fatalf("expected no command output before HTTP, got: %s", stdout.String())
 			}
@@ -234,7 +251,7 @@ func TestMailTriageInvalidMailboxValidationStopsDryRun(t *testing.T) {
 			err := runMountedMailShortcut(t, MailTriage, []string{
 				"+triage", "--as", "user", "--mailbox", mailboxID, "--dry-run",
 			}, f, stdout)
-			assertValidationError(t, err, `--mailbox must be "me" or a valid email address`)
+			assertValidationParamError(t, err, "--mailbox", `--mailbox must be "me" or a valid email address`)
 			if strings.Contains(stdout.String(), "/open-apis/mail/v1/user_mailboxes/") {
 				t.Fatalf("dry-run API output should not be generated, got: %s", stdout.String())
 			}
