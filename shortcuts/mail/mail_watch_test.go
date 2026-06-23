@@ -252,6 +252,41 @@ func TestMailWatchOutputDirRejectsUnsafePathTyped(t *testing.T) {
 	}
 }
 
+func TestMailWatchBoundedConsumeOptions(t *testing.T) {
+	f, _, _, _ := mailShortcutTestFactory(t)
+	runtime := runtimeForMailWatchTest(t, map[string]string{
+		"max-events": "1",
+		"timeout":    "90s",
+	})
+	runtime.Factory = f
+	timeout, err := parseMailWatchTimeout(runtime.Str("timeout"))
+	if err != nil {
+		t.Fatalf("parseMailWatchTimeout failed: %v", err)
+	}
+
+	opts := mailWatchConsumeOptions(runtime, map[string]string{"mailbox": "me"}, "", io.Discard, timeout)
+	if opts.MaxEvents != 1 {
+		t.Fatalf("MaxEvents = %d, want 1", opts.MaxEvents)
+	}
+	if opts.Timeout != 90*time.Second {
+		t.Fatalf("Timeout = %s, want 90s", opts.Timeout)
+	}
+}
+
+func TestMailWatchRejectsInvalidTimeout(t *testing.T) {
+	_, err := parseMailWatchTimeout("soon")
+	if err == nil {
+		t.Fatal("expected invalid timeout error")
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %T: %v", err, err)
+	}
+	if validationErr.Param != "--timeout" {
+		t.Fatalf("param = %q, want --timeout", validationErr.Param)
+	}
+}
+
 func TestMailWatchOutputDirMkdirFailureTyped(t *testing.T) {
 	chdirTemp(t)
 	mkdirErr := errors.New("mkdir denied")

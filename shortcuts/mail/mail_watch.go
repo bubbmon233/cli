@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
@@ -144,6 +145,8 @@ var MailWatch = common.Shortcut{
 		{Name: "folders", Desc: "filter: folder names JSON array, e.g. [\"inbox\",\"news\"]"},
 		{Name: "label-ids", Desc: "filter: label IDs JSON array, e.g. [\"FLAGGED\",\"IMPORTANT\"]"},
 		{Name: "folder-ids", Desc: "filter: folder IDs JSON array, e.g. [\"INBOX\",\"SENT\"]"},
+		{Name: "max-events", Type: "int", Desc: "Exit after N successful emits (0 = unlimited). Bounded runs ignore stdin EOF."},
+		{Name: "timeout", Default: "0", Desc: "Exit after DURATION (e.g. 30s, 2m). 0 = no timeout. Timeout is a normal exit."},
 		{Name: "print-output-schema", Type: "bool", Desc: "Print output field reference per --msg-format (run this first to learn field names before parsing output)"},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
@@ -263,18 +266,40 @@ var MailWatch = common.Shortcut{
 		if outFormat == "json" || outFormat == "" {
 			consumeOut = &mailWatchEnvelopeWriter{out: runtime.IO().Out, identity: string(runtime.As())}
 		}
-		return consume.Run(ctx, transport.New(), runtime.Config.AppID, runtime.Config.ProfileName, core.ResolveEndpoints(runtime.Config.Brand).Open, consume.Options{
-			EventKey:        mailEventType,
-			Params:          params,
-			Quiet:           false,
-			OutputDir:       outputDir,
-			Runtime:         &mailWatchConsumeRuntime{runtime: runtime},
-			Out:             consumeOut,
-			ErrOut:          runtime.IO().ErrOut,
-			RemoteAPIClient: &mailWatchConsumeRuntime{runtime: runtime},
-			IsTTY:           runtime.IO().IsTerminal,
-		})
+		timeout, err := parseMailWatchTimeout(runtime.Str("timeout"))
+		if err != nil {
+			return err
+		}
+		opts := mailWatchConsumeOptions(runtime, params, outputDir, consumeOut, timeout)
+		return consume.Run(ctx, transport.New(), runtime.Config.AppID, runtime.Config.ProfileName, core.ResolveEndpoints(runtime.Config.Brand).Open, opts)
 	},
+}
+
+func parseMailWatchTimeout(value string) (time.Duration, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, mailValidationParamError("--timeout", "invalid --timeout %q: expected duration like 30s or 2m", value).WithCause(err)
+	}
+	return timeout, nil
+}
+
+func mailWatchConsumeOptions(runtime *common.RuntimeContext, params map[string]string, outputDir string, consumeOut io.Writer, timeout time.Duration) consume.Options {
+	return consume.Options{
+		EventKey:        mailEventType,
+		Params:          params,
+		Quiet:           false,
+		OutputDir:       outputDir,
+		Runtime:         &mailWatchConsumeRuntime{runtime: runtime},
+		Out:             consumeOut,
+		ErrOut:          runtime.IO().ErrOut,
+		RemoteAPIClient: &mailWatchConsumeRuntime{runtime: runtime},
+		MaxEvents:       runtime.Int("max-events"),
+		Timeout:         timeout,
+		IsTTY:           runtime.IO().IsTerminal,
+	}
 }
 
 // extractMailEventBody extracts the event body from the Lark event envelope.
