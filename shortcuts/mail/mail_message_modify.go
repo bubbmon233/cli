@@ -31,7 +31,7 @@ var MailMessageModify = common.Shortcut{
 	HasFormat:   true,
 	Flags: []common.Flag{
 		{Name: "mailbox", Desc: "Mailbox email address that owns the messages (default: me)."},
-		{Name: "message-ids", Type: "string_slice", Required: true, Desc: "Message IDs to modify; comma-separated or repeat the flag."},
+		{Name: "message-ids", Type: "string_array", Required: true, Desc: "Message IDs to modify; comma-separated or repeat the flag."},
 		{Name: "add-label-ids", Type: "string_slice", Desc: "Label IDs to add. System labels unread/important/other/flagged are normalized to upper case."},
 		{Name: "remove-label-ids", Type: "string_slice", Desc: "Label IDs to remove. System labels unread/important/other/flagged are normalized to upper case."},
 		{Name: "add-folder", Desc: "Folder ID to move messages to. System folders inbox/sent/spam/archive/archived are normalized; TRASH is rejected, use +message-trash."},
@@ -99,7 +99,7 @@ func executeMessageModify(ctx context.Context, rt *common.RuntimeContext) error 
 }
 
 func buildMessageModifyInput(rt *common.RuntimeContext) (messageModifyInput, error) {
-	messageIDs, err := normalizeMessageManageIDs(rt.StrSlice("message-ids"))
+	messageIDs, err := normalizeMessageManageIDs(rt.StrArray("message-ids"))
 	if err != nil {
 		return messageModifyInput{}, err
 	}

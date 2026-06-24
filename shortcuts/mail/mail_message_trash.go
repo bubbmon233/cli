@@ -22,7 +22,7 @@ var MailMessageTrash = common.Shortcut{
 	HasFormat:   true,
 	Flags: []common.Flag{
 		{Name: "mailbox", Desc: "Mailbox email address that owns the messages (default: me)."},
-		{Name: "message-ids", Type: "string_slice", Required: true, Desc: "Message IDs to soft-delete; comma-separated or repeat the flag."},
+		{Name: "message-ids", Type: "string_array", Required: true, Desc: "Message IDs to soft-delete; comma-separated or repeat the flag."},
 	},
 	Validate: validateMessageTrash,
 	DryRun:   dryRunMessageTrash,
@@ -30,13 +30,13 @@ var MailMessageTrash = common.Shortcut{
 }
 
 func validateMessageTrash(ctx context.Context, rt *common.RuntimeContext) error {
-	_, err := normalizeMessageManageIDs(rt.StrSlice("message-ids"))
+	_, err := normalizeMessageManageIDs(rt.StrArray("message-ids"))
 	return err
 }
 
 func dryRunMessageTrash(ctx context.Context, rt *common.RuntimeContext) *common.DryRunAPI {
 	mailboxID := resolveMailboxID(rt)
-	messageIDs, _ := normalizeMessageManageIDs(rt.StrSlice("message-ids"))
+	messageIDs, _ := normalizeMessageManageIDs(rt.StrArray("message-ids"))
 	api := common.NewDryRunAPI().
 		Desc("Soft-delete messages sequentially in batches of 20").
 		Set("batch_size", mailMessageManageBatchSize).
@@ -50,7 +50,7 @@ func dryRunMessageTrash(ctx context.Context, rt *common.RuntimeContext) *common.
 
 func executeMessageTrash(ctx context.Context, rt *common.RuntimeContext) error {
 	mailboxID := resolveMailboxID(rt)
-	messageIDs, err := normalizeMessageManageIDs(rt.StrSlice("message-ids"))
+	messageIDs, err := normalizeMessageManageIDs(rt.StrArray("message-ids"))
 	if err != nil {
 		return err
 	}

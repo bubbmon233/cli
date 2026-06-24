@@ -19,7 +19,7 @@ lark-cli mail +message-modify --message-ids <id> --add-label-ids custom_label_id
 | Flag | Required | Notes |
 | --- | --- | --- |
 | `--mailbox` | No | Mailbox that owns the messages. Defaults to `me`. |
-| `--message-ids` | Yes | `string_slice`; supports comma-separated values and repeated flags. |
+| `--message-ids` | Yes | `string_array`; supports comma-separated values and repeated flags. |
 | `--add-label-ids` | No | Adds labels. System labels `unread`, `important`, `other`, `flagged` normalize to upper case. |
 | `--remove-label-ids` | No | Removes labels. Cannot overlap with `--add-label-ids`. |
 | `--add-folder` | No | Moves to one folder. `inbox`, `sent`, `spam`, `archive`, `archived` normalize to system folder IDs. |

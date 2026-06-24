@@ -50,9 +50,13 @@ func normalizeMessageManageIDs(raw []string) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, mailValidationParamError("--message-ids", "--message-ids is required")
 	}
-	ids := make([]string, 0, len(raw))
-	seen := make(map[string]struct{}, len(raw))
-	for i, part := range raw {
+	parts, err := splitMessageManageIDTokens(raw)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for i, part := range parts {
 		if part == "" {
 			return nil, mailValidationParamError("--message-ids", "--message-ids entry %d is empty; remove extra commas or provide valid message IDs", i+1)
 		}
@@ -76,6 +80,19 @@ func normalizeMessageManageIDs(raw []string) ([]string, error) {
 		return nil, mailValidationParamError("--message-ids", "--message-ids is required")
 	}
 	return ids, nil
+}
+
+func splitMessageManageIDTokens(raw []string) ([]string, error) {
+	parts := make([]string, 0, len(raw))
+	for i, token := range raw {
+		for _, r := range token {
+			if unicode.IsSpace(r) || unicode.IsControl(r) {
+				return nil, mailValidationParamError("--message-ids", "--message-ids entry %d (%q): must not contain whitespace or control characters", i+1, token)
+			}
+		}
+		parts = append(parts, strings.Split(token, ",")...)
+	}
+	return parts, nil
 }
 
 func validateMessageManageID(id string, index int) error {

@@ -51,14 +51,24 @@ func TestMessageManage_NormalizeMessageIDs(t *testing.T) {
 	if len(got) != 2 || got[0] != id1 || got[1] != id2 {
 		t.Fatalf("ids = %v, want [%s %s]", got, id1, id2)
 	}
+	got, err = normalizeMessageManageIDs([]string{id1 + "," + id2, id1})
+	if err != nil {
+		t.Fatalf("normalizeMessageManageIDs CSV/repeated returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != id1 || got[1] != id2 {
+		t.Fatalf("CSV/repeated ids = %v, want [%s %s]", got, id1, id2)
+	}
 
 	cases := [][]string{
 		{""},
 		{" id_with_leading_space_12345"},
+		{"msg_abcdefghijklmnop_1,msg_abcdefghijklmnop_2 "},
 		{"1234567890123456"},
 		{"short"},
 		{"msg_abcdefghijklmnop!"},
 		{"msg_abcdefghijklmnop\t"},
+		{"msg_abcdefghijklmnop_1\nmsg_abcdefghijklmnop_2"},
+		{"msg_abcdefghijklmnop_1", "msg_abcdefghijklmnop_2 "},
 	}
 	for _, tc := range cases {
 		if _, err := normalizeMessageManageIDs(tc); err == nil {
@@ -96,8 +106,8 @@ func TestMessageModify_Metadata(t *testing.T) {
 			t.Fatalf("missing --%s flag", name)
 		}
 	}
-	if flags["message-ids"].Type != "string_slice" || !flags["message-ids"].Required {
-		t.Errorf("--message-ids = %#v, want required string_slice", flags["message-ids"])
+	if flags["message-ids"].Type != "string_array" || !flags["message-ids"].Required {
+		t.Errorf("--message-ids = %#v, want required string_array", flags["message-ids"])
 	}
 }
 
@@ -295,5 +305,51 @@ func TestMessageTrash_RequiresYesAndBatches(t *testing.T) {
 	success, failed := decodeMessageManageSummary(t, decodeShortcutEnvelopeData(t, stdout))
 	if len(success) != 2 || len(failed) != 0 {
 		t.Fatalf("summary success=%v failed=%v", success, failed)
+	}
+}
+
+func TestMessageManage_RejectsWhitespaceBeforeAPI(t *testing.T) {
+	id1 := messageManageID("1")
+	id2 := messageManageID("2")
+	cases := []struct {
+		name     string
+		shortcut common.Shortcut
+		args     []string
+	}{
+		{
+			name:     "trash newline in repeated flag",
+			shortcut: MailMessageTrash,
+			args:     []string{"+message-trash", "--message-ids", id1 + "\n" + id2, "--yes"},
+		},
+		{
+			name:     "trash tab in csv flag",
+			shortcut: MailMessageTrash,
+			args:     []string{"+message-trash", "--message-ids", id1 + ",\t" + id2, "--yes"},
+		},
+		{
+			name:     "modify space in repeated flag",
+			shortcut: MailMessageModify,
+			args:     []string{"+message-modify", "--message-ids", id1, "--message-ids", id2 + " ", "--add-folder", "archive"},
+		},
+		{
+			name:     "modify space in csv flag",
+			shortcut: MailMessageModify,
+			args:     []string{"+message-modify", "--message-ids", id1 + ", " + id2, "--add-folder", "archive"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, stdout, _, _ := mailShortcutTestFactory(t)
+			err := runMountedMailShortcut(t, tc.shortcut, tc.args, f, stdout)
+			if err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if code := output.ExitCodeOf(err); code != output.ExitValidation {
+				t.Fatalf("exit code = %d, want %d; err=%v", code, output.ExitValidation, err)
+			}
+			if !strings.Contains(err.Error(), "must not contain whitespace or control characters") {
+				t.Fatalf("error = %v, want whitespace/control validation", err)
+			}
+		})
 	}
 }

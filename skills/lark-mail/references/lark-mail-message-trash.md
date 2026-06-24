@@ -17,7 +17,7 @@ lark-cli mail +message-trash --message-ids <id1> --message-ids <id2> --dry-run
 | Flag | Required | Notes |
 | --- | --- | --- |
 | `--mailbox` | No | Mailbox that owns the messages. Defaults to `me`. |
-| `--message-ids` | Yes | `string_slice`; supports comma-separated values and repeated flags. |
+| `--message-ids` | Yes | `string_array`; supports comma-separated values and repeated flags. |
 | `--yes` | Yes for execution | Required by the high-risk write confirmation framework. |
 
 ## Behavior
