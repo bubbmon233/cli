@@ -77,6 +77,16 @@ func TestMessageModify_Metadata(t *testing.T) {
 	if len(MailMessageModify.AuthTypes) != 1 || MailMessageModify.AuthTypes[0] != "user" {
 		t.Errorf("AuthTypes = %v, want [user]", MailMessageModify.AuthTypes)
 	}
+	requiredScopes := map[string]bool{
+		"mail:user_mailbox.message:modify": true,
+		"mail:user_mailbox.folder:read":    true,
+	}
+	for _, scope := range MailMessageModify.Scopes {
+		delete(requiredScopes, scope)
+	}
+	if len(requiredScopes) != 0 {
+		t.Errorf("Scopes missing %v", requiredScopes)
+	}
 	flags := map[string]common.Flag{}
 	for _, fl := range MailMessageModify.Flags {
 		flags[fl.Name] = fl
@@ -100,6 +110,9 @@ func TestMessageTrash_Metadata(t *testing.T) {
 	}
 	if len(MailMessageTrash.AuthTypes) != 1 || MailMessageTrash.AuthTypes[0] != "user" {
 		t.Errorf("AuthTypes = %v, want [user]", MailMessageTrash.AuthTypes)
+	}
+	if len(MailMessageTrash.Scopes) != 1 || MailMessageTrash.Scopes[0] != "mail:user_mailbox.message:modify" {
+		t.Errorf("Scopes = %v, want [mail:user_mailbox.message:modify]", MailMessageTrash.Scopes)
 	}
 }
 

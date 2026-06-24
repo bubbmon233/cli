@@ -26,7 +26,7 @@ var MailMessageModify = common.Shortcut{
 	Command:     "+message-modify",
 	Description: "Modify existing mail messages by adding/removing label IDs or moving them to a folder. Batches message IDs in groups of 20 and keeps output compact.",
 	Risk:        "write",
-	Scopes:      []string{"mail:user_mailbox.message:modify"},
+	Scopes:      []string{"mail:user_mailbox.message:modify", "mail:user_mailbox.folder:read"},
 	AuthTypes:   []string{"user"},
 	HasFormat:   true,
 	Flags: []common.Flag{
