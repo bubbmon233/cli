@@ -9,21 +9,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
 
-	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-
 	"github.com/larksuite/cli/errs"
-	"github.com/larksuite/cli/internal/client"
+	eventmail "github.com/larksuite/cli/events/mail"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/event/consume"
 	"github.com/larksuite/cli/internal/event/transport"
@@ -40,36 +34,6 @@ type mailWatchLogger struct {
 func (l *mailWatchLogger) Debug(_ context.Context, _ ...interface{}) {}
 func (l *mailWatchLogger) Info(_ context.Context, args ...interface{}) {
 	fmt.Fprintln(l.w, append([]interface{}{"[SDK Info]"}, args...)...)
-}
-func (l *mailWatchLogger) Warn(_ context.Context, args ...interface{}) {
-	fmt.Fprintln(l.w, append([]interface{}{"[SDK Warn]"}, args...)...)
-}
-func (l *mailWatchLogger) Error(_ context.Context, args ...interface{}) {
-	fmt.Fprintln(l.w, append([]interface{}{"[SDK Error]"}, args...)...)
-}
-
-var _ larkcore.Logger = (*mailWatchLogger)(nil)
-
-type mailWatchConsumeRuntime struct {
-	runtime *common.RuntimeContext
-}
-
-func (r *mailWatchConsumeRuntime) CallAPI(_ context.Context, method, path string, body interface{}) (json.RawMessage, error) {
-	apiPath := path
-	query := make(larkcore.QueryParams)
-	if u, err := url.Parse(path); err == nil && u.RawQuery != "" {
-		apiPath = u.Path
-		for key, values := range u.Query() {
-			if len(values) > 0 {
-				query.Set(key, values[0])
-			}
-		}
-	}
-	data, err := r.runtime.DoAPIJSONTyped(method, apiPath, query, body)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(map[string]interface{}{"data": data})
 }
 
 type mailWatchEnvelopeWriter struct {
@@ -287,15 +251,16 @@ func parseMailWatchTimeout(value string) (time.Duration, error) {
 }
 
 func mailWatchConsumeOptions(runtime *common.RuntimeContext, params map[string]string, outputDir string, consumeOut io.Writer, timeout time.Duration) consume.Options {
+	apiRuntime := eventmail.NewRuntime(runtime)
 	return consume.Options{
 		EventKey:        mailEventType,
 		Params:          params,
 		Quiet:           false,
 		OutputDir:       outputDir,
-		Runtime:         &mailWatchConsumeRuntime{runtime: runtime},
+		Runtime:         apiRuntime,
 		Out:             consumeOut,
 		ErrOut:          runtime.IO().ErrOut,
-		RemoteAPIClient: &mailWatchConsumeRuntime{runtime: runtime},
+		RemoteAPIClient: apiRuntime,
 		MaxEvents:       runtime.Int("max-events"),
 		Timeout:         timeout,
 		IsTTY:           runtime.IO().IsTerminal,
@@ -512,30 +477,6 @@ func watchFetchFailureValue(messageID, fetchFormat string, err error, eventBody 
 	return payload
 }
 
-// fetchMessageForWatch fetches message payload used by watch output/filtering.
-func fetchMessageForWatch(runtime *common.RuntimeContext, mailbox, messageID, format string) (map[string]interface{}, error) {
-	queryParams := make(larkcore.QueryParams)
-	queryParams.Set("format", format)
-
-	apiResp, err := runtime.DoAPI(&larkcore.ApiReq{
-		HttpMethod:  http.MethodGet,
-		ApiPath:     fmt.Sprintf("/open-apis/mail/v1/user_mailboxes/%s/messages/%s", validate.EncodePathSegment(mailbox), validate.EncodePathSegment(messageID)),
-		QueryParams: queryParams,
-	})
-	if err != nil {
-		return nil, client.WrapDoAPIError(err)
-	}
-	data, err := runtime.ClassifyAPIResponse(apiResp)
-	if err != nil {
-		return nil, err
-	}
-	msg, _ := data["message"].(map[string]interface{})
-	if msg == nil {
-		return data, nil
-	}
-	return msg, nil
-}
-
 // messageHasLabel checks if a message metadata map contains any of the given label IDs.
 func messageHasLabel(meta map[string]interface{}, labelIDSet map[string]bool) bool {
 	labels, _ := meta["label_ids"].([]interface{})
@@ -615,75 +556,4 @@ func decodeBodyFieldsForFile(data interface{}) interface{} {
 		out["message"] = decoded
 	}
 	return out
-}
-
-// writeMailEventFile writes a mail event to a JSON file in outputDir.
-// outputDir must be an already-resolved absolute path (symlinks resolved by Execute).
-func writeMailEventFile(outputDir string, data interface{}, raw map[string]interface{}) (string, error) {
-	sanitizeFilename := func(s string) string {
-		safe := regexp.MustCompile(`[^a-zA-Z0-9._\-]+`).ReplaceAllString(s, "_")
-		return strings.Trim(safe, "_")
-	}
-
-	createTime := ""
-	if header, ok := raw["header"].(map[string]interface{}); ok {
-		createTime, _ = header["create_time"].(string)
-	}
-	if createTime == "" {
-		createTime = fmt.Sprintf("%d", os.Getpid())
-	}
-	// Sanitize createTime to prevent path traversal via e.g. "2026/03/24" → subdirectory creation.
-	createTime = sanitizeFilename(createTime)
-	if createTime == "" {
-		createTime = "unknown"
-	}
-
-	// Extract sender name and subject from message payload; fall back to event_id.
-	subject := ""
-	senderName := ""
-	if msg, ok := data.(map[string]interface{}); ok {
-		subject, _ = msg["subject"].(string)
-		senderName, _ = msg["from"].(string)
-	}
-
-	var stem string
-	if subject != "" || senderName != "" {
-		parts := []string{}
-		if senderName != "" {
-			parts = append(parts, senderName)
-		}
-		if subject != "" {
-			parts = append(parts, subject)
-		}
-		raw := strings.Join(parts, "_")
-		safe := sanitizeFilename(raw)
-		if len(safe) > 80 {
-			safe = safe[:80]
-		}
-		stem = safe
-	} else {
-		eventID := "unknown"
-		if header, ok := raw["header"].(map[string]interface{}); ok {
-			if id, _ := header["event_id"].(string); id != "" {
-				eventID = sanitizeFilename(id)
-			}
-		}
-		if eventID == "" {
-			eventID = "unknown"
-		}
-		stem = eventID
-	}
-	filename := fmt.Sprintf("%s_%s.json", stem, createTime)
-	fp := filepath.Join(outputDir, filename)
-
-	jsonData, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	if err := validate.AtomicWrite(fp, append(jsonData, '\n'), 0600); err != nil {
-		return "", err
-	}
-
-	return fp, nil
 }

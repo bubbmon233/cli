@@ -285,6 +285,23 @@ func TestMailWatchRejectsInvalidTimeout(t *testing.T) {
 	if validationErr.Param != "--timeout" {
 		t.Fatalf("param = %q, want --timeout", validationErr.Param)
 	}
+	p, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed problem, got %T", err)
+	}
+	if p.Subtype != errs.SubtypeInvalidArgument {
+		t.Fatalf("subtype = %q, want %q", p.Subtype, errs.SubtypeInvalidArgument)
+	}
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		t.Fatalf("expected parse duration cause, got nil")
+	}
+	if !strings.Contains(cause.Error(), "time: invalid duration") {
+		t.Fatalf("unexpected parse duration cause: %v", cause)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("parse duration cause not preserved: %v", err)
+	}
 }
 
 func TestMailWatchOutputDirMkdirFailureTyped(t *testing.T) {
