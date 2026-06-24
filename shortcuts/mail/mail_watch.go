@@ -145,8 +145,8 @@ var MailWatch = common.Shortcut{
 		{Name: "folders", Desc: "filter: folder names JSON array, e.g. [\"inbox\",\"news\"]"},
 		{Name: "label-ids", Desc: "filter: label IDs JSON array, e.g. [\"FLAGGED\",\"IMPORTANT\"]"},
 		{Name: "folder-ids", Desc: "filter: folder IDs JSON array, e.g. [\"INBOX\",\"SENT\"]"},
-		{Name: "max-events", Type: "int", Desc: "Exit after N successful emits (0 = unlimited). Bounded runs ignore stdin EOF."},
-		{Name: "timeout", Default: "0", Desc: "Exit after DURATION (e.g. 30s, 2m). 0 = no timeout. Timeout is a normal exit."},
+		{Name: "max-events", Type: "int", Desc: "Exit after N successful emits (0 = unlimited). Non-TTY stdin EOF also stops the run."},
+		{Name: "timeout", Default: "0", Desc: "Exit after DURATION (e.g. 30s, 2m). 0 = no timeout. Non-TTY stdin EOF exits earlier with reason: signal."},
 		{Name: "print-output-schema", Type: "bool", Desc: "Print output field reference per --msg-format (run this first to learn field names before parsing output)"},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
