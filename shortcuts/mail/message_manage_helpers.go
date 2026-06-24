@@ -198,6 +198,12 @@ func chunkMessageManageIDs(ids []string) [][]string {
 }
 
 func validateCustomMessageManageLabels(rt *common.RuntimeContext, mailboxID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := validateLabelReadScope(rt); err != nil {
+		return err
+	}
 	seen := map[string]struct{}{}
 	for _, id := range ids {
 		if _, ok := seen[id]; ok {

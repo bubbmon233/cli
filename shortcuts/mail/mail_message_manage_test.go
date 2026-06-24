@@ -5,10 +5,12 @@ package mail
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/httpmock"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
@@ -41,6 +43,46 @@ func decodeMessageManageSummary(t *testing.T, data map[string]interface{}) ([]in
 	return success, failed
 }
 
+func requireMessageManageValidationParam(t *testing.T, err error, param string) *errs.ValidationError {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected validation error for %s, got nil", param)
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected *errs.ValidationError for %s, got %T", param, err)
+	}
+	problem, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed Problem for %s, got %T", param, err)
+	}
+	if problem.Category != errs.CategoryValidation || problem.Subtype != errs.SubtypeInvalidArgument {
+		t.Fatalf("problem = %s/%s, want validation/invalid_argument", problem.Category, problem.Subtype)
+	}
+	if validationErr.Param != param {
+		t.Fatalf("param = %q, want %q", validationErr.Param, param)
+	}
+	return validationErr
+}
+
+func requireMessageManageFailedPrecondition(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected failed precondition error, got nil")
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected *errs.ValidationError, got %T", err)
+	}
+	problem, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed Problem, got %T", err)
+	}
+	if problem.Category != errs.CategoryValidation || problem.Subtype != errs.SubtypeFailedPrecondition {
+		t.Fatalf("problem = %s/%s, want validation/failed_precondition", problem.Category, problem.Subtype)
+	}
+}
+
 func TestMessageManage_NormalizeMessageIDs(t *testing.T) {
 	id1 := messageManageID("1")
 	id2 := messageManageID("2")
@@ -71,9 +113,8 @@ func TestMessageManage_NormalizeMessageIDs(t *testing.T) {
 		{"msg_abcdefghijklmnop_1", "msg_abcdefghijklmnop_2 "},
 	}
 	for _, tc := range cases {
-		if _, err := normalizeMessageManageIDs(tc); err == nil {
-			t.Fatalf("normalizeMessageManageIDs(%q) expected validation error", tc)
-		}
+		_, err := normalizeMessageManageIDs(tc)
+		requireMessageManageValidationParam(t, err, "--message-ids")
 	}
 }
 
@@ -173,8 +214,9 @@ func TestMessageModify_RejectsLabelIntersectionAndTrashFolder(t *testing.T) {
 		"--add-label-ids", "unread",
 		"--remove-label-ids", "UNREAD",
 	}, f, stdout)
-	if err == nil || !strings.Contains(err.Error(), "label cannot be both added and removed") {
-		t.Fatalf("expected label intersection validation error, got %v", err)
+	requireMessageManageValidationParam(t, err, "--add-label-ids")
+	if !strings.Contains(err.Error(), "label cannot be both added and removed") {
+		t.Fatalf("error = %v, want label intersection validation", err)
 	}
 
 	err = runMountedMailShortcut(t, MailMessageModify, []string{
@@ -182,8 +224,9 @@ func TestMessageModify_RejectsLabelIntersectionAndTrashFolder(t *testing.T) {
 		"--message-ids", id,
 		"--add-folder", "trash",
 	}, f, stdout)
-	if err == nil || !strings.Contains(err.Error(), "use +message-trash") {
-		t.Fatalf("expected TRASH validation error, got %v", err)
+	requireMessageManageValidationParam(t, err, "--add-folder")
+	if !strings.Contains(err.Error(), "use +message-trash") {
+		t.Fatalf("error = %v, want TRASH validation", err)
 	}
 }
 
@@ -240,6 +283,19 @@ func TestMessageModify_BatchesAndAggregatesPartialFailure(t *testing.T) {
 	if len(success) != 21 || len(failed) != 20 {
 		t.Fatalf("success=%d failed=%d, want 21/20", len(success), len(failed))
 	}
+}
+
+func TestMessageModify_AllBatchesFailReturnsError(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	id := messageManageID("1")
+	stubMessageManagePost(reg, "batch_modify", map[string]interface{}{"code": 1230001, "msg": "bad request"})
+
+	err := runMountedMailShortcut(t, MailMessageModify, []string{
+		"+message-modify",
+		"--message-ids", id,
+		"--add-folder", "archive",
+	}, f, stdout)
+	requireMessageManageFailedPrecondition(t, err)
 }
 
 func TestMessageModify_DryRunShowsPlanWithoutValidationGET(t *testing.T) {
@@ -306,6 +362,19 @@ func TestMessageTrash_RequiresYesAndBatches(t *testing.T) {
 	if len(success) != 2 || len(failed) != 0 {
 		t.Fatalf("summary success=%v failed=%v", success, failed)
 	}
+}
+
+func TestMessageTrash_AllBatchesFailReturnsError(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	id := messageManageID("1")
+	stubMessageManagePost(reg, "batch_trash", map[string]interface{}{"code": 1230001, "msg": "bad request"})
+
+	err := runMountedMailShortcut(t, MailMessageTrash, []string{
+		"+message-trash",
+		"--message-ids", id,
+		"--yes",
+	}, f, stdout)
+	requireMessageManageFailedPrecondition(t, err)
 }
 
 func TestMessageManage_RejectsWhitespaceBeforeAPI(t *testing.T) {

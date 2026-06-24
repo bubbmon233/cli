@@ -95,6 +95,9 @@ func executeMessageModify(ctx context.Context, rt *common.RuntimeContext) error 
 		summary.SuccessMessageIDs = append(summary.SuccessMessageIDs, batch...)
 	}
 	emitMessageManageSummary(rt, summary, false)
+	if len(summary.SuccessMessageIDs) == 0 && len(summary.FailedMessageIDs) > 0 {
+		return mailFailedPreconditionError("all message modify batches failed")
+	}
 	return nil
 }
 
