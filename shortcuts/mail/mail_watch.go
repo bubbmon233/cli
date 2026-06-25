@@ -234,7 +234,7 @@ var MailWatch = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		opts := mailWatchConsumeOptions(runtime, params, outputDir, consumeOut, timeout)
+		opts := mailWatchConsumeOptions(runtime, params, outputDir, consumeOut, timeout, mailWatchStdinClosed(runtime))
 		return consume.Run(ctx, transport.New(), runtime.Config.AppID, runtime.Config.ProfileName, core.ResolveEndpoints(runtime.Config.Brand).Open, opts)
 	},
 }
@@ -250,7 +250,25 @@ func parseMailWatchTimeout(value string) (time.Duration, error) {
 	return timeout, nil
 }
 
-func mailWatchConsumeOptions(runtime *common.RuntimeContext, params map[string]string, outputDir string, consumeOut io.Writer, timeout time.Duration) consume.Options {
+func mailWatchStdinClosed(runtime *common.RuntimeContext) <-chan struct{} {
+	streams := runtime.IO()
+	if streams == nil || streams.IsTerminal || streams.In == nil {
+		return nil
+	}
+	stdinClosed := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, streams.In)
+		fmt.Fprintln(streams.ErrOut, "[event] stdin closed — shutting down. "+
+			"mail +watch treats stdin EOF as exit signal in non-TTY mode. "+
+			"To keep running until --max-events/--timeout/SIGTERM: keep stdin open "+
+			"(e.g. `< /dev/tty` interactive, `< <(tail -f /dev/null)` script), "+
+			"or stop via SIGTERM instead of closing stdin.")
+		close(stdinClosed)
+	}()
+	return stdinClosed
+}
+
+func mailWatchConsumeOptions(runtime *common.RuntimeContext, params map[string]string, outputDir string, consumeOut io.Writer, timeout time.Duration, stdinClosed <-chan struct{}) consume.Options {
 	apiRuntime := eventmail.NewRuntime(runtime)
 	return consume.Options{
 		EventKey:        mailEventType,
@@ -264,6 +282,7 @@ func mailWatchConsumeOptions(runtime *common.RuntimeContext, params map[string]s
 		MaxEvents:       runtime.Int("max-events"),
 		Timeout:         timeout,
 		IsTTY:           runtime.IO().IsTerminal,
+		StdinClosed:     stdinClosed,
 	}
 }
 

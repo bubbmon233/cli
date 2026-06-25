@@ -6,6 +6,7 @@ package mail
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -163,6 +164,47 @@ func TestProcessMailMessageReceivedDropsNonMatchingFilters(t *testing.T) {
 	}
 	if out != nil {
 		t.Fatalf("nonmatching folder should drop event, got %s", out)
+	}
+}
+
+func TestProcessMailMessageReceivedEmitsFetchFailure(t *testing.T) {
+	rt := &stubAPIClient{callFn: func(_ context.Context, method, path string, body any) (json.RawMessage, error) {
+		return nil, errors.New("missing scope")
+	}}
+	raw := &event.RawEvent{EventType: EventTypeMessageReceived, Payload: json.RawMessage(`{"event":{"mail_address":"user@example.com","message_id":"msg_1"}}`)}
+	out, err := processMailMessageReceived(context.Background(), rt, raw, map[string]string{
+		"mailbox":    "user@example.com",
+		"msg_format": "metadata",
+	})
+	if err != nil {
+		t.Fatalf("Process error: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("output JSON: %v", err)
+	}
+	if decoded["ok"] != false {
+		t.Fatalf("ok = %#v, want false", decoded["ok"])
+	}
+	errObj, ok := decoded["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("error payload = %#v", decoded["error"])
+	}
+	if errObj["type"] != "fetch_message_failed" {
+		t.Fatalf("error.type = %#v", errObj["type"])
+	}
+	if errObj["message_id"] != "msg_1" {
+		t.Fatalf("error.message_id = %#v", errObj["message_id"])
+	}
+	if errObj["format"] != "metadata" {
+		t.Fatalf("error.format = %#v", errObj["format"])
+	}
+	if errObj["message"] != "missing scope" {
+		t.Fatalf("error.message = %#v", errObj["message"])
+	}
+	eventObj, ok := decoded["event"].(map[string]interface{})
+	if !ok || eventObj["message_id"] != "msg_1" {
+		t.Fatalf("event payload = %#v", decoded["event"])
 	}
 }
 

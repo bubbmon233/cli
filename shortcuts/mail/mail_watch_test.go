@@ -264,12 +264,49 @@ func TestMailWatchBoundedConsumeOptions(t *testing.T) {
 		t.Fatalf("parseMailWatchTimeout failed: %v", err)
 	}
 
-	opts := mailWatchConsumeOptions(runtime, map[string]string{"mailbox": "me"}, "", io.Discard, timeout)
+	stdinClosed := make(chan struct{})
+	opts := mailWatchConsumeOptions(runtime, map[string]string{"mailbox": "me"}, "", io.Discard, timeout, stdinClosed)
 	if opts.MaxEvents != 1 {
 		t.Fatalf("MaxEvents = %d, want 1", opts.MaxEvents)
 	}
 	if opts.Timeout != 90*time.Second {
 		t.Fatalf("Timeout = %s, want 90s", opts.Timeout)
+	}
+	if opts.StdinClosed != stdinClosed {
+		t.Fatalf("StdinClosed was not propagated")
+	}
+}
+
+func TestMailWatchStdinClosedNonTTY(t *testing.T) {
+	f, _, stderr, _ := mailShortcutTestFactory(t)
+	f.IOStreams.In = strings.NewReader("")
+	f.IOStreams.IsTerminal = false
+	runtime := runtimeForMailWatchTest(t, map[string]string{})
+	runtime.Factory = f
+
+	stdinClosed := mailWatchStdinClosed(runtime)
+	if stdinClosed == nil {
+		t.Fatal("expected stdin watcher for non-TTY input")
+	}
+	select {
+	case <-stdinClosed:
+	case <-time.After(1 * time.Second):
+		t.Fatal("stdin watcher did not close after EOF")
+	}
+	if !strings.Contains(stderr.String(), "stdin closed") {
+		t.Fatalf("stderr missing stdin diagnostic: %q", stderr.String())
+	}
+}
+
+func TestMailWatchStdinClosedTTYDisabled(t *testing.T) {
+	f, _, _, _ := mailShortcutTestFactory(t)
+	f.IOStreams.In = strings.NewReader("")
+	f.IOStreams.IsTerminal = true
+	runtime := runtimeForMailWatchTest(t, map[string]string{})
+	runtime.Factory = f
+
+	if got := mailWatchStdinClosed(runtime); got != nil {
+		t.Fatalf("terminal stdin should not be watched, got %#v", got)
 	}
 }
 

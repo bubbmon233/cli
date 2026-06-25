@@ -46,7 +46,7 @@ func processMailMessageReceived(ctx context.Context, rt event.APIClient, raw *ev
 	}
 	message, err := fetchMessage(ctx, rt, fetchMailbox, messageID, fetchFormat)
 	if err != nil {
-		return nil, err
+		return json.Marshal(mailMessageFetchFailure(messageID, fetchFormat, err, body))
 	}
 	if !messageMatchesFilters(message, params) {
 		return nil, nil
@@ -58,6 +58,22 @@ func processMailMessageReceived(ctx context.Context, rt event.APIClient, raw *ev
 		message = minimalWatchMessage(message)
 	}
 	return json.Marshal(MailMessageReceivedOutput{Message: message})
+}
+
+func mailMessageFetchFailure(messageID, fetchFormat string, err error, eventBody map[string]interface{}) map[string]interface{} {
+	payload := map[string]interface{}{
+		"ok": false,
+		"error": map[string]interface{}{
+			"type":       "fetch_message_failed",
+			"message_id": messageID,
+			"format":     fetchFormat,
+			"message":    err.Error(),
+		},
+	}
+	if len(eventBody) > 0 {
+		payload["event"] = eventBody
+	}
+	return payload
 }
 
 func extractMailEventBody(raw *event.RawEvent) map[string]interface{} {
