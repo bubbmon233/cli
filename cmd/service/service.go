@@ -358,6 +358,9 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 	}
 
 	if opts.DryRun {
+		if isMailRuleReorder(opts.Method) {
+			return mailRuleReorderDryRun(f, request, config, opts.Format)
+		}
 		if fileMeta != nil {
 			return cmdutil.PrintDryRunWithFile(f.IOStreams.Out, request, config, opts.Format, fileMeta.FieldName, fileMeta.FilePath, fileMeta.FormFields)
 		}
@@ -373,6 +376,12 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 	ac, err := f.NewAPIClientWithConfig(config)
 	if err != nil {
 		return err
+	}
+	if isMailRuleReorder(opts.Method) {
+		request, err = completeMailRuleReorder(opts.Ctx, ac, request)
+		if err != nil {
+			return err
+		}
 	}
 
 	out := f.IOStreams.Out
