@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/larksuite/cli/errs"
+	"github.com/larksuite/cli/internal/auth"
 	"github.com/larksuite/cli/internal/httpmock"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
@@ -130,13 +131,15 @@ func TestMessageModify_Metadata(t *testing.T) {
 	}
 	requiredScopes := map[string]bool{
 		"mail:user_mailbox.message:modify": true,
-		"mail:user_mailbox.folder:read":    true,
 	}
 	for _, scope := range MailMessageModify.Scopes {
 		delete(requiredScopes, scope)
 	}
 	if len(requiredScopes) != 0 {
 		t.Errorf("Scopes missing %v", requiredScopes)
+	}
+	if len(MailMessageModify.ConditionalScopes) != 1 || MailMessageModify.ConditionalScopes[0] != "mail:user_mailbox.folder:read" {
+		t.Errorf("ConditionalScopes = %v, want [mail:user_mailbox.folder:read]", MailMessageModify.ConditionalScopes)
 	}
 	flags := map[string]common.Flag{}
 	for _, fl := range MailMessageModify.Flags {
@@ -164,6 +167,61 @@ func TestMessageTrash_Metadata(t *testing.T) {
 	}
 	if len(MailMessageTrash.Scopes) != 1 || MailMessageTrash.Scopes[0] != "mail:user_mailbox.message:modify" {
 		t.Errorf("Scopes = %v, want [mail:user_mailbox.message:modify]", MailMessageTrash.Scopes)
+	}
+}
+
+func TestMessageModify_LabelOnlyDoesNotRequireFolderReadScope(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	token := auth.GetStoredToken("test-app", "ou_testuser")
+	if token == nil {
+		t.Fatal("expected test token")
+	}
+	token.Scope = strings.ReplaceAll(token.Scope, " mail:user_mailbox.folder:read", "")
+	if err := auth.SetStoredToken(token); err != nil {
+		t.Fatalf("SetStoredToken() error = %v", err)
+	}
+
+	id := messageManageID("1")
+	post := stubMessageManagePost(reg, "batch_modify", map[string]interface{}{"code": 0, "data": map[string]interface{}{}})
+
+	err := runMountedMailShortcut(t, MailMessageModify, []string{
+		"+message-modify",
+		"--message-ids", id,
+		"--remove-label-ids", "UNREAD",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(post.CapturedBody, &body); err != nil {
+		t.Fatalf("unmarshal captured body: %v", err)
+	}
+	removeLabels := body["remove_label_ids"].([]interface{})
+	if len(removeLabels) != 1 || removeLabels[0] != "UNREAD" {
+		t.Fatalf("remove_label_ids = %#v, want [UNREAD]", removeLabels)
+	}
+}
+
+func TestMessageModify_ReadReceiptRequestLabelIsSystemLabel(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	id := messageManageID("1")
+	post := stubMessageManagePost(reg, "batch_modify", map[string]interface{}{"code": 0, "data": map[string]interface{}{}})
+
+	err := runMountedMailShortcut(t, MailMessageModify, []string{
+		"+message-modify",
+		"--message-ids", id,
+		"--remove-label-ids", "read_receipt_request",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(post.CapturedBody, &body); err != nil {
+		t.Fatalf("unmarshal captured body: %v", err)
+	}
+	removeLabels := body["remove_label_ids"].([]interface{})
+	if len(removeLabels) != 1 || removeLabels[0] != "READ_RECEIPT_REQUEST" {
+		t.Fatalf("remove_label_ids = %#v, want [READ_RECEIPT_REQUEST]", removeLabels)
 	}
 }
 

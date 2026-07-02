@@ -16,10 +16,11 @@ import (
 const mailMessageManageBatchSize = 20
 
 var messageManageSystemLabels = map[string]string{
-	"UNREAD":    "UNREAD",
-	"IMPORTANT": "IMPORTANT",
-	"OTHER":     "OTHER",
-	"FLAGGED":   "FLAGGED",
+	"UNREAD":               "UNREAD",
+	"IMPORTANT":            "IMPORTANT",
+	"OTHER":                "OTHER",
+	"FLAGGED":              "FLAGGED",
+	"READ_RECEIPT_REQUEST": "READ_RECEIPT_REQUEST",
 }
 
 var messageManageSystemFolders = map[string]string{
