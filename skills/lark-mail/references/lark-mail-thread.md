@@ -71,6 +71,7 @@ lark-cli mail +thread --thread-id <thread-id> --dry-run
 - JSON 输出中 `messages[].body_html` 里的 `<` / `>` 可能显示为 `\u003c` / `\u003e`（JSON 安全转义，内容不变，`jq -r` 可还原）。
 - `mail +thread` 不再在读取会话时获取附件/图片下载 URL。如后续步骤需要 URL，请针对特定的 `message_id` 和 `attachment_ids` 调用原生附件 URL API。
 - 与 `+message` 一样，普通附件和内嵌图片都出现在 `messages[].attachments[]` 中，使用同一个 `user_mailbox.message.attachments download_url` API。
+- `download_url` 是短时效预签名 URL，应在用户准备下载时再生成；不要把它作为长期可点击链接发送、保存或转发。Generate it only when the user is ready to download. Do not send or store it as a long-lived clickable link. download_url is a short-lived pre-signed URL, usually valid for about 2 hours or less and may expire earlier.
 - 查看某条邮件的原始 HTML：
 
 ```bash
@@ -107,5 +108,5 @@ lark-cli mail +reply --message-id <last_message_id> --body "..."
 - `lark-cli mail +message` — 读取单封邮件
 - `lark-cli mail +reply` — 回复邮件
 - `lark-cli mail +forward` — 转发邮件
-- `lark-cli mail user_mailbox.message.attachments download_url` — 按需获取邮件附件/图片下载 URL
+- `lark-cli mail user_mailbox.message.attachments download_url` — 用户准备下载时按需获取邮件附件/图片短时效下载 URL，不要长期保存或转发为可点击链接
 - `lark-cli mail user_mailbox.messages list` — 列出收件箱邮件（获取 `thread_id`）

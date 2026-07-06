@@ -39,6 +39,9 @@ type ResponseOptions struct {
 	// CheckError is called on parsed JSON results. Nil defaults to (*APIClient).CheckResponse
 	// with the Identity field (or AsUser when unset).
 	CheckError func(result interface{}, identity core.Identity) error
+	// Transform can enrich successful JSON results before safety scanning,
+	// jq filtering, or formatted output. It is not called for business errors.
+	Transform func(result interface{}) interface{}
 }
 
 // httpStatusError classifies an HTTP error response by status when the body
@@ -108,6 +111,9 @@ func HandleResponse(resp *larkcore.ApiResp, opts ResponseOptions) error {
 		// successful result. Classify by HTTP status so it is never swallowed.
 		if resp.StatusCode >= 400 {
 			return httpStatusError(resp.StatusCode, resp.RawBody)
+		}
+		if opts.Transform != nil {
+			result = opts.Transform(result)
 		}
 		if opts.OutputPath != "" {
 			// File downloads keep the existing raw-response scan path because the

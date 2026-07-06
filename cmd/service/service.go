@@ -28,6 +28,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const mailAttachmentDownloadURLSchemaPath = "mail.user_mailbox.message.attachments.download_url"
+
+const mailAttachmentDownloadURLUsageHint = "Generate it only when the user is ready to download. Do not send or store it as a long-lived clickable link. download_url is a short-lived pre-signed URL, usually valid for about 2 hours or less and may expire earlier."
+
 // RegisterServiceCommands registers all service commands from from_meta specs.
 func RegisterServiceCommands(parent *cobra.Command, f *cmdutil.Factory) {
 	RegisterServiceCommandsWithContext(context.Background(), parent, f)
@@ -449,7 +453,31 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 		CommandPath: opts.Cmd.CommandPath(),
 		Identity:    opts.As,
 		CheckError:  checkErr,
+		Transform:   serviceResponseTransform(opts.SchemaPath),
 	})
+}
+
+func serviceResponseTransform(schemaPath string) func(interface{}) interface{} {
+	if schemaPath != mailAttachmentDownloadURLSchemaPath {
+		return nil
+	}
+	return injectMailAttachmentDownloadURLHint
+}
+
+func injectMailAttachmentDownloadURLHint(result interface{}) interface{} {
+	root, ok := result.(map[string]interface{})
+	if !ok {
+		return result
+	}
+	data, ok := root["data"].(map[string]interface{})
+	if !ok {
+		return result
+	}
+	if _, exists := data["download_url_usage_hint"]; exists {
+		return result
+	}
+	data["download_url_usage_hint"] = mailAttachmentDownloadURLUsageHint
+	return result
 }
 
 // checkServiceScopes pre-checks user scopes before making the API call.
