@@ -51,8 +51,8 @@ func hintSendDraft(runtime *common.RuntimeContext, mailboxID, draftID string) {
 // original message as read after a reply/reply-all/forward operation.
 func hintMarkAsRead(runtime *common.RuntimeContext, mailboxID, originalMessageID string) {
 	fmt.Fprintf(runtime.IO().ErrOut,
-		"tip: mark original as read? lark-cli mail +message-modify --mailbox %s --message-ids %s --remove-label-ids UNREAD\n",
-		sanitizeForTerminal(mailboxID), sanitizeForTerminal(originalMessageID))
+		"tip: mark original as read? lark-cli mail +message-modify --mailbox '%s' --message-ids '%s' --remove-label-ids UNREAD\n",
+		shellQuoteForHint(mailboxID), shellQuoteForHint(originalMessageID))
 }
 
 // hintReadReceiptRequest prints a stderr tip when a message that the caller
