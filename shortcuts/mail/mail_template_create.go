@@ -26,11 +26,12 @@ var MailTemplateCreate = common.Shortcut{
 		{Name: "subject", Desc: "Optional. Default subject saved with the template."},
 		{Name: "template-content", Desc: "Template body content. Prefer HTML. Referenced local images (<img src=\"./file.png\">) are auto-uploaded to Drive and rewritten to cid: refs."},
 		{Name: "template-content-file", Desc: "Optional. Path to a file whose contents become --template-content. Relative path only. Mutually exclusive with --template-content."},
-		{Name: "plain-text", Type: "bool", Desc: "Mark the template as plain-text mode (is_plain_text_mode=true). Inline images still require HTML content; use only for pure plain-text templates."},
-		{Name: "to", Desc: "Optional. Default To recipient list. Separate multiple addresses with commas. Display-name format is supported."},
-		{Name: "cc", Desc: "Optional. Default Cc recipient list. Separate multiple addresses with commas."},
-		{Name: "bcc", Desc: "Optional. Default Bcc recipient list. Separate multiple addresses with commas."},
-		{Name: "attach", Desc: "Optional. Non-inline attachment file path(s), comma-separated (relative path only). Each file is uploaded to Drive; the order follows the flag order exactly (order-sensitive for LARGE/SMALL classification)."},
+		{Name: "plain-text", Type: "bool", Desc: "Mark the template as plain-text mode (is_plain_text_mode=true). Cannot be used with --inline; use only for pure plain-text templates."},
+		{Name: "to", Type: "string_array", Desc: "Optional. Default To recipient list. Repeat the flag or separate multiple addresses with commas. Display-name format is supported."},
+		{Name: "cc", Type: "string_array", Desc: "Optional. Default Cc recipient list. Repeat the flag or separate multiple addresses with commas."},
+		{Name: "bcc", Type: "string_array", Desc: "Optional. Default Bcc recipient list. Repeat the flag or separate multiple addresses with commas."},
+		{Name: "attach", Type: "string_array", Desc: "Optional. Non-inline attachment file path(s), relative path only. Repeat the flag or separate multiple paths with commas; order is preserved for LARGE/SMALL classification."},
+		{Name: "inline", Type: "string_array", Desc: "Optional. Inline images as JSON object or array. Repeat the flag to append entries; values are not comma-split. Each entry: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		mailboxID := resolveComposeMailboxID(runtime)
@@ -42,11 +43,11 @@ var MailTemplateCreate = common.Shortcut{
 			"mailbox_id":         mailboxID,
 			"is_plain_text_mode": runtime.Bool("plain-text"),
 			"name_len":           len([]rune(runtime.Str("name"))),
-			"attachments_total":  len(splitByComma(runtime.Str("attach"))) + len(parseLocalImgs(content)),
-			"inline_count":       len(parseLocalImgs(content)),
-			"tos_count":          countAddresses(runtime.Str("to")),
-			"ccs_count":          countAddresses(runtime.Str("cc")),
-			"bccs_count":         countAddresses(runtime.Str("bcc")),
+			"attachments_total":  len(normalizeCommaListFlagValues(runtime.StrArray("attach"))) + len(parseLocalImgs(content)) + countInlineSpecsForLog(runtime.StrArray("inline")),
+			"inline_count":       len(parseLocalImgs(content)) + countInlineSpecsForLog(runtime.StrArray("inline")),
+			"tos_count":          countAddresses(normalizeRecipientFlagValues(runtime.StrArray("to"))),
+			"ccs_count":          countAddresses(normalizeRecipientFlagValues(runtime.StrArray("cc"))),
+			"bccs_count":         countAddresses(normalizeRecipientFlagValues(runtime.StrArray("bcc"))),
 		})
 		api := common.NewDryRunAPI().
 			Desc("Create a new mail template. The command scans HTML for local <img src> references, uploads each inline image to Drive (≤20MB single upload_all; >20MB upload_prepare+upload_part+upload_finish), rewrites <img src> values to cid: references, uploads any non-inline --attach files the same way, and finally POSTs a Template payload to mail.user_mailbox.templates.create.")
@@ -55,7 +56,10 @@ var MailTemplateCreate = common.Shortcut{
 		for _, img := range parseLocalImgs(content) {
 			addTemplateUploadSteps(runtime, api, img.Path)
 		}
-		for _, p := range splitByComma(runtime.Str("attach")) {
+		for _, spec := range inlineSpecsFromFlagValuesForLog(runtime.StrArray("inline")) {
+			addTemplateUploadSteps(runtime, api, spec.FilePath)
+		}
+		for _, p := range normalizeCommaListFlagValues(runtime.StrArray("attach")) {
 			addTemplateUploadSteps(runtime, api, p)
 		}
 		api = api.POST(templateMailboxPath(mailboxID)).
@@ -65,9 +69,9 @@ var MailTemplateCreate = common.Shortcut{
 					"subject":            runtime.Str("subject"),
 					"template_content":   "<rewritten-HTML-or-text>",
 					"is_plain_text_mode": runtime.Bool("plain-text"),
-					"tos":                renderTemplateAddresses(runtime.Str("to")),
-					"ccs":                renderTemplateAddresses(runtime.Str("cc")),
-					"bccs":               renderTemplateAddresses(runtime.Str("bcc")),
+					"tos":                renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("to"))),
+					"ccs":                renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("cc"))),
+					"bccs":               renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("bcc"))),
 					"attachments":        "<computed from uploads>",
 				},
 			})
@@ -90,6 +94,17 @@ var MailTemplateCreate = common.Shortcut{
 					mailInvalidParam("--template-content-file", "mutually exclusive with --template-content"),
 				)
 		}
+		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
+		if inlineFlag != "" && runtime.Bool("plain-text") {
+			return mailValidationError("--inline is not supported with --plain-text (inline images require HTML body)").
+				WithParams(
+					mailInvalidParam("--inline", "requires HTML body"),
+					mailInvalidParam("--plain-text", "mutually exclusive with --inline"),
+				)
+		}
 		return nil
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
@@ -101,9 +116,24 @@ var MailTemplateCreate = common.Shortcut{
 		name := runtime.Str("name")
 		subject := runtime.Str("subject")
 		isPlainText := runtime.Bool("plain-text")
-		tos := renderTemplateAddresses(runtime.Str("to"))
-		ccs := renderTemplateAddresses(runtime.Str("cc"))
-		bccs := renderTemplateAddresses(runtime.Str("bcc"))
+		tos := renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("to")))
+		ccs := renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("cc")))
+		bccs := renderTemplateAddresses(normalizeRecipientFlagValues(runtime.StrArray("bcc")))
+		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
+		if inlineFlag != "" && isPlainText {
+			return mailValidationError("--inline is not supported with --plain-text (inline images require HTML body)").
+				WithParams(
+					mailInvalidParam("--inline", "requires HTML body"),
+					mailInvalidParam("--plain-text", "mutually exclusive with --inline"),
+				)
+		}
+		inlineSpecs, err := parseInlineSpecs(inlineFlag)
+		if err != nil {
+			return err
+		}
 
 		content = wrapTemplateContentIfNeeded(content, isPlainText)
 		if int64(len(content)) > maxTemplateContentBytes {
@@ -114,7 +144,8 @@ var MailTemplateCreate = common.Shortcut{
 
 		rewritten, atts, err := buildTemplatePayloadFromFlags(
 			ctx, runtime, name, subject, content, tos, ccs, bccs,
-			splitByComma(runtime.Str("attach")),
+			normalizeCommaListFlagValues(runtime.StrArray("attach")),
+			inlineSpecs,
 		)
 		if err != nil {
 			return err

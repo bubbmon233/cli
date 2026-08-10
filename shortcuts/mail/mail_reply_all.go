@@ -30,13 +30,13 @@ var MailReplyAll = common.Shortcut{
 		bodyFileFlag,
 		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to the mailbox's primary address."},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
-		{Name: "to", Desc: "Additional To address(es), comma-separated (appended to original recipients)"},
-		{Name: "cc", Desc: "Additional CC email address(es), comma-separated"},
-		{Name: "bcc", Desc: "BCC email address(es), comma-separated"},
-		{Name: "remove", Desc: "Address(es) to exclude from the outgoing reply, comma-separated"},
+		{Name: "to", Type: "string_array", Desc: "Additional To address(es). Repeat the flag or separate multiple addresses with commas (appended to original recipients)."},
+		{Name: "cc", Type: "string_array", Desc: "Additional CC email address(es). Repeat the flag or separate multiple addresses with commas."},
+		{Name: "bcc", Type: "string_array", Desc: "BCC email address(es). Repeat the flag or separate multiple addresses with commas."},
+		{Name: "remove", Type: "string_array", Desc: "Address(es) to exclude from the outgoing reply. Repeat the flag or separate multiple addresses with commas."},
 		{Name: "plain-text", Type: "bool", Desc: "Force plain-text mode, ignoring all HTML auto-detection. Cannot be used with --inline."},
-		{Name: "attach", Desc: "Attachment file path(s), comma-separated (relative path only)"},
-		{Name: "inline", Desc: "Inline images as a JSON array. Each entry: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. All file_path values must be relative paths. Cannot be used with --plain-text. CID images are embedded via <img src=\"cid:...\"> in the HTML body. CID is a unique identifier, e.g. a random hex string like \"a1b2c3d4e5f6a7b8c9d0\"."},
+		{Name: "attach", Type: "string_array", Desc: "Attachment file path(s), relative path only. Repeat the flag or separate multiple paths with commas."},
+		{Name: "inline", Type: "string_array", Desc: "Inline images as JSON object or array. Repeat the flag to append entries; values are not comma-split. Each entry: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. Cannot be used with --plain-text."},
 		{Name: "confirm-send", Type: "bool", Desc: "Send the reply immediately instead of saving as draft. Only use after the user has explicitly confirmed recipients and content."},
 		{Name: "send-time", Desc: "Scheduled send time as a Unix timestamp in seconds. Must be at least 5 minutes in the future. Use with --confirm-send to schedule the email."},
 		{Name: "request-receipt", Type: "bool", Desc: "Request a read receipt (Message Disposition Notification, RFC 3798) addressed to the sender. Recipient mail clients may prompt the user, send automatically, or silently ignore — delivery of a receipt is not guaranteed."},
@@ -70,6 +70,11 @@ var MailReplyAll = common.Shortcut{
 		return api
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
+		attach := normalizeCommaFlagValues(runtime.StrArray("attach"))
+		inline, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
 		if err := validateTemplateID(runtime.Str("template-id")); err != nil {
 			return err
 		}
@@ -101,7 +106,7 @@ var MailReplyAll = common.Shortcut{
 		if err := validateEventFlags(runtime); err != nil {
 			return err
 		}
-		if err := validateComposeInlineAndAttachments(runtime.FileIO(), runtime.Str("attach"), runtime.Str("inline"), runtime.Bool("plain-text"), ""); err != nil {
+		if err := validateComposeInlineAndAttachments(runtime.FileIO(), attach, inline, runtime.Bool("plain-text"), ""); err != nil {
 			return err
 		}
 		return validatePriorityFlag(runtime)
@@ -112,13 +117,16 @@ var MailReplyAll = common.Shortcut{
 		if bErr != nil {
 			return bErr
 		}
-		toFlag := runtime.Str("to")
-		ccFlag := runtime.Str("cc")
-		bccFlag := runtime.Str("bcc")
-		removeFlag := runtime.Str("remove")
+		toFlag := normalizeRecipientFlagValues(runtime.StrArray("to"))
+		ccFlag := normalizeRecipientFlagValues(runtime.StrArray("cc"))
+		bccFlag := normalizeRecipientFlagValues(runtime.StrArray("bcc"))
+		removeList := normalizeCommaListFlagValues(runtime.StrArray("remove"))
 		plainText := runtime.Bool("plain-text")
-		attachFlag := runtime.Str("attach")
-		inlineFlag := runtime.Str("inline")
+		attachFlag := normalizeCommaFlagValues(runtime.StrArray("attach"))
+		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
 		confirmSend := runtime.Bool("confirm-send")
 		sendTime := runtime.Str("send-time")
 
@@ -166,12 +174,6 @@ var MailReplyAll = common.Shortcut{
 			signatureID = autoResolveSignatureID(runtime, mailboxID, senderEmail, true /*isReply*/)
 		}
 
-		var removeList []string
-		for _, r := range strings.Split(removeFlag, ",") {
-			if s := strings.TrimSpace(r); s != "" {
-				removeList = append(removeList, s)
-			}
-		}
 		selfEmails := fetchSelfEmailSet(runtime, mailboxID)
 		excluded := buildExcludeSet(selfEmails, removeList)
 		replyToAddr := orig.replyTo

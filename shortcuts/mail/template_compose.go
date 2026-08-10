@@ -442,6 +442,7 @@ func buildTemplatePayloadFromFlags(
 	name, subject, content string,
 	tos, ccs, bccs []templateMailAddr,
 	attachPaths []string,
+	inlineSpecs []InlineSpec,
 ) (rewrittenContent string, atts []templateAttachment, err error) {
 	builder := newTemplateAttachmentBuilder(name, subject, content, tos, ccs, bccs)
 
@@ -472,7 +473,17 @@ func buildTemplatePayloadFromFlags(
 		builder.append(fileKey, filepath.Base(img.Path), cid, true, sz)
 	}
 
-	// 2. Non-inline --attach paths in the exact order passed.
+	// 2. Explicit --inline entries in flag order. They address cid: refs that
+	// are already present in the caller-provided template body.
+	for _, spec := range inlineSpecs {
+		fileKey, sz, upErr := uploadToDriveForTemplate(ctx, runtime, spec.FilePath)
+		if upErr != nil {
+			return "", nil, upErr
+		}
+		builder.append(fileKey, filepath.Base(spec.FilePath), spec.CID, true, sz)
+	}
+
+	// 3. Non-inline --attach paths in the exact order passed.
 	for _, p := range attachPaths {
 		if strings.TrimSpace(p) == "" {
 			continue

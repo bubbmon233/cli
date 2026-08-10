@@ -58,7 +58,19 @@ func (m Mailbox) String() string {
 	if m.Name == "" {
 		return m.Email
 	}
-	return encodeHeader(m.Name) + " <" + m.Email + ">"
+	return formatDisplayName(m.Name) + " <" + m.Email + ">"
+}
+
+func formatDisplayName(name string) string {
+	encoded := encodeHeader(name)
+	if encoded != name {
+		return encoded
+	}
+	if !strings.ContainsAny(name, "\",;<>@()[]:\\") {
+		return name
+	}
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name)
+	return `"` + escaped + `"`
 }
 
 // sanitizeControlChars strips ASCII control characters (0x00–0x1F, 0x7F)

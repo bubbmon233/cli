@@ -35,7 +35,8 @@ var MailTemplateUpdate = common.Shortcut{
 		{Name: "set-to", Desc: "Replace the To recipient list. Separate multiple addresses with commas. Pass --set-to=\"\" to clear the list."},
 		{Name: "set-cc", Desc: "Replace the Cc recipient list. Pass --set-cc=\"\" to clear the list."},
 		{Name: "set-bcc", Desc: "Replace the Bcc recipient list. Pass --set-bcc=\"\" to clear the list."},
-		{Name: "attach", Desc: "Additional non-inline attachment file path(s), comma-separated. Each file is uploaded to Drive and appended to the template's attachments[] in the exact flag order."},
+		{Name: "attach", Type: "string_array", Desc: "Additional non-inline attachment file path(s). Repeat the flag or separate multiple paths with commas; each file is uploaded to Drive and appended in flag order."},
+		{Name: "inline", Type: "string_array", Desc: "Additional inline images as JSON object or array. Repeat the flag to append entries; values are not comma-split. Each entry: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		if runtime.Bool("print-patch-template") {
@@ -60,7 +61,10 @@ var MailTemplateUpdate = common.Shortcut{
 		for _, img := range parseLocalImgs(content) {
 			addTemplateUploadSteps(runtime, api, img.Path)
 		}
-		for _, p := range splitByComma(runtime.Str("attach")) {
+		for _, spec := range inlineSpecsFromFlagValuesForLog(runtime.StrArray("inline")) {
+			addTemplateUploadSteps(runtime, api, spec.FilePath)
+		}
+		for _, p := range normalizeCommaListFlagValues(runtime.StrArray("attach")) {
 			addTemplateUploadSteps(runtime, api, p)
 		}
 		api = api.PUT(templateMailboxPath(mailboxID, tid)).
@@ -73,8 +77,8 @@ var MailTemplateUpdate = common.Shortcut{
 			"template_id":        tid,
 			"is_plain_text_mode": runtime.Bool("set-plain-text"),
 			"name_len":           len([]rune(runtime.Str("set-name"))),
-			"attachments_total":  len(splitByComma(runtime.Str("attach"))) + len(parseLocalImgs(content)),
-			"inline_count":       len(parseLocalImgs(content)),
+			"attachments_total":  len(normalizeCommaListFlagValues(runtime.StrArray("attach"))) + len(parseLocalImgs(content)) + countInlineSpecsForLog(runtime.StrArray("inline")),
+			"inline_count":       len(parseLocalImgs(content)) + countInlineSpecsForLog(runtime.StrArray("inline")),
 			"tos_count":          countAddresses(runtime.Str("set-to")),
 			"ccs_count":          countAddresses(runtime.Str("set-cc")),
 			"bccs_count":         countAddresses(runtime.Str("set-bcc")),
@@ -103,6 +107,17 @@ var MailTemplateUpdate = common.Shortcut{
 		}
 		if name := runtime.Str("set-name"); name != "" && len([]rune(name)) > 100 {
 			return mailValidationParamError("--set-name", "--set-name must be at most 100 characters")
+		}
+		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
+		if inlineFlag != "" && runtime.Bool("set-plain-text") {
+			return mailValidationError("--inline is not supported with --set-plain-text (inline images require HTML body)").
+				WithParams(
+					mailInvalidParam("--inline", "requires HTML body"),
+					mailInvalidParam("--set-plain-text", "mutually exclusive with --inline"),
+				)
 		}
 		return nil
 	},
@@ -167,6 +182,21 @@ var MailTemplateUpdate = common.Shortcut{
 		if runtime.Changed("set-bcc") {
 			tpl.Bccs = renderTemplateAddresses(runtime.Str("set-bcc"))
 		}
+		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
+		if err != nil {
+			return err
+		}
+		if inlineFlag != "" && tpl.IsPlainTextMode {
+			return mailValidationError("--inline is not supported with plain-text templates (inline images require HTML body)").
+				WithParams(
+					mailInvalidParam("--inline", "requires HTML body"),
+					mailInvalidParam("--set-plain-text", "mutually exclusive with --inline"),
+				)
+		}
+		inlineSpecs, err := parseInlineSpecs(inlineFlag)
+		if err != nil {
+			return err
+		}
 
 		// Apply JSON patch file (simple shallow merge). This is a convenience
 		// for agents that want to assemble updates off-line; the CLI simply
@@ -210,7 +240,8 @@ var MailTemplateUpdate = common.Shortcut{
 		rewritten, newAtts, err := buildTemplatePayloadFromFlags(
 			ctx, runtime, tpl.Name, tpl.Subject, tpl.TemplateContent,
 			tpl.Tos, tpl.Ccs, tpl.Bccs,
-			splitByComma(runtime.Str("attach")),
+			normalizeCommaListFlagValues(runtime.StrArray("attach")),
+			inlineSpecs,
 		)
 		if err != nil {
 			return err

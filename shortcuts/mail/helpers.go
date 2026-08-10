@@ -2281,15 +2281,112 @@ type InlineSpec struct {
 	FilePath string `json:"file_path"`
 }
 
-// parseInlineSpecs parses the --inline flag value as a JSON array of InlineSpec.
-// Returns an empty slice when raw is empty.
+// normalizeRecipientFlagValues folds repeated recipient flags back into the
+// comma-separated string shape consumed by the existing compose helpers.
+func normalizeRecipientFlagValues(values []string) string {
+	var parts []string
+	for _, raw := range values {
+		for _, part := range splitRecipientFlagValue(raw) {
+			m := ParseMailbox(part)
+			if m.Email == "" {
+				continue
+			}
+			parts = append(parts, m.String())
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func splitRecipientFlagValue(raw string) []string {
+	parts := splitAddressList(raw)
+	if len(parts) <= 1 {
+		return parts
+	}
+	out := make([]string, 0, len(parts))
+	for i := 0; i < len(parts); i++ {
+		part := parts[i]
+		if !strings.Contains(part, "@") && i+1 < len(parts) && strings.Contains(parts[i+1], "<") {
+			coalesced := part
+			for i+1 < len(parts) && !hasCompleteAngleAddress(coalesced) {
+				i++
+				coalesced += ", " + parts[i]
+			}
+			out = append(out, strings.TrimSpace(coalesced))
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func hasCompleteAngleAddress(raw string) bool {
+	lt := strings.LastIndex(raw, "<")
+	return lt >= 0 && strings.Contains(raw[lt:], ">")
+}
+
+func normalizeCommaListFlagValues(values []string) []string {
+	var out []string
+	for _, raw := range values {
+		out = append(out, splitByComma(raw)...)
+	}
+	return out
+}
+
+func normalizeCommaFlagValues(values []string) string {
+	return strings.Join(normalizeCommaListFlagValues(values), ",")
+}
+
+func normalizeInlineFlagValues(values []string) (string, error) {
+	var all []InlineSpec
+	for _, raw := range values {
+		specs, err := parseInlineSpecs(raw)
+		if err != nil {
+			return "", err
+		}
+		all = append(all, specs...)
+	}
+	if len(all) == 0 {
+		return "", nil
+	}
+	buf, err := json.Marshal(all)
+	if err != nil {
+		return "", mailValidationParamError("--inline", "marshal normalized --inline values: %v", err).WithCause(err)
+	}
+	return string(buf), nil
+}
+
+func inlineSpecsFromFlagValuesForLog(values []string) []InlineSpec {
+	raw, err := normalizeInlineFlagValues(values)
+	if err != nil {
+		return nil
+	}
+	specs, err := parseInlineSpecs(raw)
+	if err != nil {
+		return nil
+	}
+	return specs
+}
+
+func countInlineSpecsForLog(values []string) int {
+	return len(inlineSpecsFromFlagValuesForLog(values))
+}
+
+// parseInlineSpecs parses one --inline flag value as either a JSON array or a
+// single JSON object. Returns an empty slice when raw is empty.
 func parseInlineSpecs(raw string) ([]InlineSpec, error) {
-	if strings.TrimSpace(raw) == "" {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return nil, nil
 	}
 	var specs []InlineSpec
-	if err := json.Unmarshal([]byte(raw), &specs); err != nil {
-		return nil, mailValidationParamError("--inline", "--inline must be a JSON array, e.g. '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
+	if strings.HasPrefix(raw, "{") {
+		var spec InlineSpec
+		if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+			return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
+		}
+		specs = []InlineSpec{spec}
+	} else if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+		return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
 	}
 	for i, s := range specs {
 		if strings.TrimSpace(s.CID) == "" {
