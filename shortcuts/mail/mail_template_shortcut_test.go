@@ -1282,14 +1282,15 @@ func TestMailTemplateUpdate_PatchFileControlsFinalInlinePlainTextCheck(t *testin
 				},
 			},
 		})
-		reg.Register(&httpmock.Stub{
+		uploadStub := &httpmock.Stub{
 			Method: "POST",
 			URL:    "/open-apis/drive/v1/medias/upload_all",
 			Body: map[string]interface{}{
 				"code": 0,
 				"data": map[string]interface{}{"file_token": "file_logo"},
 			},
-		})
+		}
+		reg.Register(uploadStub)
 		putStub := &httpmock.Stub{
 			Method: "PUT",
 			URL:    "/user_mailboxes/me/templates/73",
@@ -1314,6 +1315,32 @@ func TestMailTemplateUpdate_PatchFileControlsFinalInlinePlainTextCheck(t *testin
 		tplWrap := body["template"].(map[string]interface{})
 		if tplWrap["is_plain_text_mode"] != false {
 			t.Fatalf("expected final template to be HTML mode, got %#v", tplWrap["is_plain_text_mode"])
+		}
+		if len(uploadStub.CapturedBody) == 0 {
+			t.Fatalf("expected inline image upload request")
+		}
+		if ct := uploadStub.CapturedHeaders.Get("Content-Type"); !strings.Contains(ct, "multipart/form-data") {
+			t.Fatalf("upload content type = %q, want multipart/form-data", ct)
+		}
+		if !strings.Contains(string(uploadStub.CapturedBody), "logo.png") {
+			t.Fatalf("upload body should include inline filename, got %q", uploadStub.CapturedBody)
+		}
+		atts, ok := tplWrap["attachments"].([]interface{})
+		if !ok || len(atts) != 1 {
+			t.Fatalf("expected one inline attachment in PUT body, got %#v", tplWrap["attachments"])
+		}
+		att := atts[0].(map[string]interface{})
+		if att["id"] != "file_logo" {
+			t.Fatalf("inline attachment id = %v, want file_logo", att["id"])
+		}
+		if att["filename"] != "logo.png" {
+			t.Fatalf("inline attachment filename = %v, want logo.png", att["filename"])
+		}
+		if att["cid"] != "hero" {
+			t.Fatalf("inline attachment cid = %v, want hero", att["cid"])
+		}
+		if att["is_inline"] != true {
+			t.Fatalf("inline attachment is_inline = %v, want true", att["is_inline"])
 		}
 	})
 }

@@ -4,10 +4,12 @@
 package mail
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/larksuite/cli/errs"
 	"github.com/spf13/cobra"
 
 	"github.com/larksuite/cli/internal/cmdutil"
@@ -103,6 +105,7 @@ func TestNormalizeRepeatedInlineFlagsRejectsDuplicateCID(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "duplicate cid") {
 		t.Fatalf("expected duplicate cid error, got %v", err)
 	}
+	assertInlineValidationError(t, err)
 }
 
 func TestParseInlineSpecsRejectsNonObjectArrayJSON(t *testing.T) {
@@ -112,7 +115,22 @@ func TestParseInlineSpecsRejectsNonObjectArrayJSON(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "JSON object or array") {
 				t.Fatalf("expected JSON object/array error, got %v", err)
 			}
+			assertInlineValidationError(t, err)
 		})
+	}
+}
+
+func assertInlineValidationError(t *testing.T, err error) {
+	t.Helper()
+	var ve *errs.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("error type = %T, want *errs.ValidationError", err)
+	}
+	if ve.Subtype != errs.SubtypeInvalidArgument {
+		t.Fatalf("validation subtype = %q, want %q", ve.Subtype, errs.SubtypeInvalidArgument)
+	}
+	if ve.Param != "--inline" {
+		t.Fatalf("validation param = %q, want --inline", ve.Param)
 	}
 }
 
