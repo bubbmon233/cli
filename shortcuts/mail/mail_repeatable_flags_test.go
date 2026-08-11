@@ -126,6 +126,9 @@ func assertInlineValidationError(t *testing.T, err error) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("error type = %T, want *errs.ValidationError", err)
 	}
+	if ve.Category != errs.CategoryValidation {
+		t.Fatalf("validation category = %q, want %q", ve.Category, errs.CategoryValidation)
+	}
 	if ve.Subtype != errs.SubtypeInvalidArgument {
 		t.Fatalf("validation subtype = %q, want %q", ve.Subtype, errs.SubtypeInvalidArgument)
 	}
