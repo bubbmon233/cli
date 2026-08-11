@@ -71,7 +71,7 @@ lark-cli mail +template-update --as user --template-id 712345 \
 | `--set-cc <emails>` | 用单次参数值替换默认抄送；多个地址仍在该值内用逗号分隔，传 `--set-cc=""` 可清空 |
 | `--set-bcc <emails>` | 用单次参数值替换默认密送；多个地址仍在该值内用逗号分隔，传 `--set-bcc=""` 可清空 |
 | `--attach <paths>` | 追加非 inline 附件，不替换已有附件。可重复传参，每次值也可用逗号分隔；按展开顺序上传 |
-| `--inline <json>` | 追加 inline 图片，不替换已有附件。可重复传参；每次值必须是 JSON object 或 array，不按逗号切分，按传入顺序上传 |
+| `--inline <json>` | 追加 inline 图片，不替换已有附件。可重复传参；每次值必须是 JSON object 或 array，不按逗号切分，按传入顺序上传；最终模板为纯文本模式时会被拒绝 |
 
 ### 结构化 patch
 

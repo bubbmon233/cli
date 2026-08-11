@@ -2345,6 +2345,9 @@ func normalizeInlineFlagValues(values []string) (string, error) {
 		}
 		all = append(all, specs...)
 	}
+	if err := validateUniqueInlineCIDs(all); err != nil {
+		return "", err
+	}
 	if len(all) == 0 {
 		return "", nil
 	}
@@ -2353,6 +2356,22 @@ func normalizeInlineFlagValues(values []string) (string, error) {
 		return "", mailValidationParamError("--inline", "marshal normalized --inline values: %v", err).WithCause(err)
 	}
 	return string(buf), nil
+}
+
+func validateUniqueInlineCIDs(specs []InlineSpec) error {
+	seen := make(map[string]struct{}, len(specs))
+	for i, s := range specs {
+		cid := normalizeInlineCID(s.CID)
+		if cid == "" {
+			continue
+		}
+		key := strings.ToLower(cid)
+		if _, ok := seen[key]; ok {
+			return mailValidationParamError("--inline", "--inline entry %d: duplicate cid %q", i, cid)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 func inlineSpecsFromFlagValuesForLog(values []string) []InlineSpec {
@@ -2379,14 +2398,19 @@ func parseInlineSpecs(raw string) ([]InlineSpec, error) {
 		return nil, nil
 	}
 	var specs []InlineSpec
-	if strings.HasPrefix(raw, "{") {
+	switch raw[0] {
+	case '{':
 		var spec InlineSpec
 		if err := json.Unmarshal([]byte(raw), &spec); err != nil {
 			return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
 		}
 		specs = []InlineSpec{spec}
-	} else if err := json.Unmarshal([]byte(raw), &specs); err != nil {
-		return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
+	case '[':
+		if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+			return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]': %v", err).WithCause(err)
+		}
+	default:
+		return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]'")
 	}
 	for i, s := range specs {
 		if strings.TrimSpace(s.CID) == "" {
@@ -2397,6 +2421,17 @@ func parseInlineSpecs(raw string) ([]InlineSpec, error) {
 		}
 	}
 	return specs, nil
+}
+
+func validateInlineWithPlainTextTemplate(inlineFlag string, plainText bool, plainTextParam string) error {
+	if inlineFlag == "" || !plainText {
+		return nil
+	}
+	return mailValidationError("--inline is not supported with plain-text templates (inline images require HTML body)").
+		WithParams(
+			mailInvalidParam("--inline", "requires HTML body"),
+			mailInvalidParam(plainTextParam, "mutually exclusive with --inline"),
+		)
 }
 
 // inlineSpecFilePaths returns the file paths from a slice of InlineSpec, for use in size checks.

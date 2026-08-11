@@ -39,6 +39,27 @@ func TestNormalizeRepeatedRecipientFlagsPreservesDisplayNameCommas(t *testing.T)
 	}
 }
 
+func TestMailboxLongUnicodeDisplayNameSplitsEncodedWords(t *testing.T) {
+	name := strings.Repeat("测试用户", 20)
+	got := (Mailbox{Name: name, Email: "long@example.com"}).String()
+	if strings.Contains(got, name) {
+		t.Fatalf("display name should be encoded, got %q", got)
+	}
+	encodedWords := 0
+	for _, field := range strings.Fields(got) {
+		if !strings.HasPrefix(field, "=?UTF-8?b?") && !strings.HasPrefix(field, "=?UTF-8?B?") {
+			continue
+		}
+		encodedWords++
+		if len(field) > 75 {
+			t.Fatalf("encoded word length = %d, want <= 75: %q", len(field), field)
+		}
+	}
+	if encodedWords < 2 {
+		t.Fatalf("expected long display name to be split into multiple encoded words, got %q", got)
+	}
+}
+
 func TestNormalizeRepeatedCommaFlagsPreservesOrder(t *testing.T) {
 	got := normalizeCommaListFlagValues([]string{
 		"./a.pdf",
@@ -71,6 +92,27 @@ func TestNormalizeRepeatedInlineFlagsAppendsObjectAndArrayValues(t *testing.T) {
 	}
 	if !reflect.DeepEqual(specs, want) {
 		t.Fatalf("inline specs = %#v, want %#v", specs, want)
+	}
+}
+
+func TestNormalizeRepeatedInlineFlagsRejectsDuplicateCID(t *testing.T) {
+	_, err := normalizeInlineFlagValues([]string{
+		`{"cid":"Logo","file_path":"./a.png"}`,
+		`[{"cid":"<logo>","file_path":"./b.png"}]`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate cid") {
+		t.Fatalf("expected duplicate cid error, got %v", err)
+	}
+}
+
+func TestParseInlineSpecsRejectsNonObjectArrayJSON(t *testing.T) {
+	for _, raw := range []string{`null`, `"value"`, `42`, `true`} {
+		t.Run(raw, func(t *testing.T) {
+			_, err := parseInlineSpecs(raw)
+			if err == nil || !strings.Contains(err.Error(), "JSON object or array") {
+				t.Fatalf("expected JSON object/array error, got %v", err)
+			}
+		})
 	}
 }
 

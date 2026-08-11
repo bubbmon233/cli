@@ -4,7 +4,7 @@
 package mail
 
 import (
-	"encoding/base64"
+	"mime"
 	"strings"
 )
 
@@ -94,7 +94,7 @@ func sanitizeControlChars(s string) string {
 func encodeHeader(val string) string {
 	for _, r := range val {
 		if r > 127 {
-			return "=?UTF-8?B?" + base64.StdEncoding.EncodeToString([]byte(val)) + "?="
+			return mime.BEncoding.Encode("UTF-8", val)
 		}
 	}
 	return val

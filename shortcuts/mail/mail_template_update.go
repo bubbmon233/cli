@@ -108,16 +108,8 @@ var MailTemplateUpdate = common.Shortcut{
 		if name := runtime.Str("set-name"); name != "" && len([]rune(name)) > 100 {
 			return mailValidationParamError("--set-name", "--set-name must be at most 100 characters")
 		}
-		inlineFlag, err := normalizeInlineFlagValues(runtime.StrArray("inline"))
-		if err != nil {
+		if _, err := normalizeInlineFlagValues(runtime.StrArray("inline")); err != nil {
 			return err
-		}
-		if inlineFlag != "" && runtime.Bool("set-plain-text") {
-			return mailValidationError("--inline is not supported with --set-plain-text (inline images require HTML body)").
-				WithParams(
-					mailInvalidParam("--inline", "requires HTML body"),
-					mailInvalidParam("--set-plain-text", "mutually exclusive with --inline"),
-				)
 		}
 		return nil
 	},
@@ -186,13 +178,6 @@ var MailTemplateUpdate = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		if inlineFlag != "" && tpl.IsPlainTextMode {
-			return mailValidationError("--inline is not supported with plain-text templates (inline images require HTML body)").
-				WithParams(
-					mailInvalidParam("--inline", "requires HTML body"),
-					mailInvalidParam("--set-plain-text", "mutually exclusive with --inline"),
-				)
-		}
 		inlineSpecs, err := parseInlineSpecs(inlineFlag)
 		if err != nil {
 			return err
@@ -219,6 +204,9 @@ var MailTemplateUpdate = common.Shortcut{
 				contentChanged = true
 			}
 			applyTemplatePatchFile(tpl, &patch)
+		}
+		if err := validateInlineWithPlainTextTemplate(inlineFlag, tpl.IsPlainTextMode, "--set-plain-text"); err != nil {
+			return err
 		}
 
 		// Apply plain-text → HTML line-break upgrade to newly supplied content

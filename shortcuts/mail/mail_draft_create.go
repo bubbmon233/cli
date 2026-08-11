@@ -164,6 +164,9 @@ var MailDraftCreate = common.Shortcut{
 			if !input.PlainText && merged.IsPlainTextMode {
 				input.PlainText = true
 			}
+			if err := validateInlineWithPlainTextTemplate(input.Inline, input.PlainText, "--template-id"); err != nil {
+				return err
+			}
 			templateLargeAttachmentIDs = merged.LargeAttachmentIDs
 			templateInlineAttachments = merged.InlineAttachments
 			templateSmallAttachments = merged.SmallAttachments

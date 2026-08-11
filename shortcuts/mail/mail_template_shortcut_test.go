@@ -1151,6 +1151,173 @@ func TestMailSend_TemplateIDAppliesInlineAndSmall(t *testing.T) {
 	}
 }
 
+func TestMailSend_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
+	chdirTemp(t)
+	if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me@example.com/templates/70",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"template": map[string]interface{}{
+					"template_id":        "70",
+					"subject":            "plain",
+					"template_content":   "plain body",
+					"is_plain_text_mode": true,
+				},
+			},
+		},
+	})
+
+	err := runMountedMailShortcut(t, MailSend, []string{
+		"+send",
+		"--from", "me@example.com",
+		"--to", "alice@example.com",
+		"--body", `<p><img src="cid:hero"></p>`,
+		"--inline", `{"cid":"hero","file_path":"logo.png"}`,
+		"--template-id", "70",
+	}, f, stdout)
+	if err == nil || !strings.Contains(err.Error(), "plain-text templates") {
+		t.Fatalf("expected plain-text template inline rejection, got %v", err)
+	}
+}
+
+func TestMailDraftCreate_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
+	chdirTemp(t)
+	if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/templates/71",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"template": map[string]interface{}{
+					"template_id":        "71",
+					"subject":            "plain",
+					"template_content":   "plain body",
+					"is_plain_text_mode": true,
+				},
+			},
+		},
+	})
+
+	err := runMountedMailShortcut(t, MailDraftCreate, []string{
+		"+draft-create",
+		"--body", `<p><img src="cid:hero"></p>`,
+		"--inline", `{"cid":"hero","file_path":"logo.png"}`,
+		"--template-id", "71",
+	}, f, stdout)
+	if err == nil || !strings.Contains(err.Error(), "plain-text templates") {
+		t.Fatalf("expected plain-text template inline rejection, got %v", err)
+	}
+}
+
+func TestMailTemplateUpdate_PatchFileControlsFinalInlinePlainTextCheck(t *testing.T) {
+	t.Run("patch to plain text rejects inline", func(t *testing.T) {
+		chdirTemp(t)
+		if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile("plain.json", []byte(`{"is_plain_text_mode":true}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f, stdout, _, reg := mailShortcutTestFactory(t)
+		reg.Register(&httpmock.Stub{
+			Method: "GET",
+			URL:    "/user_mailboxes/me/templates/72",
+			Body: map[string]interface{}{
+				"code": 0,
+				"data": map[string]interface{}{
+					"template": map[string]interface{}{
+						"template_id":        "72",
+						"name":               "T",
+						"subject":            "S",
+						"template_content":   `<p><img src="cid:hero"></p>`,
+						"is_plain_text_mode": false,
+					},
+				},
+			},
+		})
+
+		err := runMountedMailShortcut(t, MailTemplateUpdate, []string{
+			"+template-update",
+			"--template-id", "72",
+			"--inline", `{"cid":"hero","file_path":"logo.png"}`,
+			"--patch-file", "plain.json",
+		}, f, stdout)
+		if err == nil || !strings.Contains(err.Error(), "plain-text templates") {
+			t.Fatalf("expected final plain-text inline rejection, got %v", err)
+		}
+	})
+
+	t.Run("patch to html permits inline despite set plain text flag", func(t *testing.T) {
+		chdirTemp(t)
+		if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile("html.json", []byte(`{"is_plain_text_mode":false}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f, stdout, _, reg := mailShortcutTestFactory(t)
+		reg.Register(&httpmock.Stub{
+			Method: "GET",
+			URL:    "/user_mailboxes/me/templates/73",
+			Body: map[string]interface{}{
+				"code": 0,
+				"data": map[string]interface{}{
+					"template": map[string]interface{}{
+						"template_id":        "73",
+						"name":               "T",
+						"subject":            "S",
+						"template_content":   `<p><img src="cid:hero"></p>`,
+						"is_plain_text_mode": true,
+					},
+				},
+			},
+		})
+		reg.Register(&httpmock.Stub{
+			Method: "POST",
+			URL:    "/open-apis/drive/v1/medias/upload_all",
+			Body: map[string]interface{}{
+				"code": 0,
+				"data": map[string]interface{}{"file_token": "file_logo"},
+			},
+		})
+		putStub := &httpmock.Stub{
+			Method: "PUT",
+			URL:    "/user_mailboxes/me/templates/73",
+			Body: map[string]interface{}{
+				"code": 0,
+				"data": map[string]interface{}{"template": map[string]interface{}{"template_id": "73"}},
+			},
+		}
+		reg.Register(putStub)
+
+		err := runMountedMailShortcut(t, MailTemplateUpdate, []string{
+			"+template-update",
+			"--template-id", "73",
+			"--set-plain-text",
+			"--inline", `{"cid":"hero","file_path":"logo.png"}`,
+			"--patch-file", "html.json",
+		}, f, stdout)
+		if err != nil {
+			t.Fatalf("expected patch final HTML to permit inline, got %v", err)
+		}
+		body := decodeCapturedBody(t, putStub)
+		tplWrap := body["template"].(map[string]interface{})
+		if tplWrap["is_plain_text_mode"] != false {
+			t.Fatalf("expected final template to be HTML mode, got %#v", tplWrap["is_plain_text_mode"])
+		}
+	})
+}
+
 // TestMailTemplateUpdate_ValidateErrors verifies Validate-layer errors fire
 // before any network call.
 func TestMailTemplateUpdate_ValidateErrors(t *testing.T) {
