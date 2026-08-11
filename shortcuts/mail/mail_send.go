@@ -189,9 +189,6 @@ var MailSend = common.Shortcut{
 			if !runtime.Bool("plain-text") && merged.IsPlainTextMode {
 				plainText = true
 			}
-			if err := validateInlineWithPlainTextTemplate(inlineFlag, plainText, "--template-id"); err != nil {
-				return err
-			}
 			templateLargeAttachmentIDs = merged.LargeAttachmentIDs
 			templateInlineAttachments = merged.InlineAttachments
 			templateSmallAttachments = merged.SmallAttachments

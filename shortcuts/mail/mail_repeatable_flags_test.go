@@ -97,19 +97,35 @@ func TestNormalizeRepeatedInlineFlagsAppendsObjectAndArrayValues(t *testing.T) {
 	}
 }
 
-func TestNormalizeRepeatedInlineFlagsRejectsDuplicateCID(t *testing.T) {
-	_, err := normalizeInlineFlagValues([]string{
+func TestNormalizeRepeatedInlineFlagsAllowsDuplicateCIDForCompatibility(t *testing.T) {
+	raw, err := normalizeInlineFlagValues([]string{
 		`{"cid":"Logo","file_path":"./a.png"}`,
 		`[{"cid":"<logo>","file_path":"./b.png"}]`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "duplicate cid") {
-		t.Fatalf("expected duplicate cid error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected duplicate cid compatibility, got %v", err)
 	}
-	assertInlineValidationError(t, err)
+	specs, err := parseInlineSpecs(raw)
+	if err != nil {
+		t.Fatalf("parseInlineSpecs(%q) error = %v", raw, err)
+	}
+	if len(specs) != 2 {
+		t.Fatalf("inline specs = %#v, want 2 entries", specs)
+	}
+}
+
+func TestParseInlineSpecsNullIsEmptyForCompatibility(t *testing.T) {
+	specs, err := parseInlineSpecs(`null`)
+	if err != nil {
+		t.Fatalf("parseInlineSpecs(null) error = %v", err)
+	}
+	if len(specs) != 0 {
+		t.Fatalf("parseInlineSpecs(null) = %#v, want empty", specs)
+	}
 }
 
 func TestParseInlineSpecsRejectsNonObjectArrayJSON(t *testing.T) {
-	for _, raw := range []string{`null`, `"value"`, `42`, `true`} {
+	for _, raw := range []string{`"value"`, `42`, `true`} {
 		t.Run(raw, func(t *testing.T) {
 			_, err := parseInlineSpecs(raw)
 			if err == nil || !strings.Contains(err.Error(), "JSON object or array") {

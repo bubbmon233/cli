@@ -54,7 +54,7 @@ lark-cli mail +template-create --as user \
 | `--cc <emails>` | 否 | 默认抄送。可重复传参，也可在单次值内用逗号分隔 |
 | `--bcc <emails>` | 否 | 默认密送。可重复传参，也可在单次值内用逗号分隔 |
 | `--attach <paths>` | 否 | 非 inline 附件路径。可重复传参，每次值也可用逗号分隔；每个文件按展开顺序上传到 Drive |
-| `--inline <json>` | 否 | 手动指定 inline 图片 CID 映射。可重复传参；每次值必须是 JSON object 或 array，不按逗号切分，按传入顺序追加。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'` |
+| `--inline <json>` | 否 | 手动指定 inline 图片 CID 映射。可重复传参；每次值可为 JSON object 或 array（`null` 按空值忽略以兼容旧行为），不按逗号切分，按传入顺序追加。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'` |
 | `--mailbox <email>` | 否 | 所属邮箱，默认 `me`（当前用户主邮箱） |
 | `--dry-run` | 否 | 仅打印计划中的 API 调用链，不真实执行 |
 

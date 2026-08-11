@@ -1151,7 +1151,7 @@ func TestMailSend_TemplateIDAppliesInlineAndSmall(t *testing.T) {
 	}
 }
 
-func TestMailSend_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
+func TestMailSend_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 	chdirTemp(t)
 	if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
 		t.Fatal(err)
@@ -1172,6 +1172,14 @@ func TestMailSend_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
 			},
 		},
 	})
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me@example.com/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "draft_plain_send"},
+		},
+	})
 
 	err := runMountedMailShortcut(t, MailSend, []string{
 		"+send",
@@ -1180,13 +1188,18 @@ func TestMailSend_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
 		"--body", `<p><img src="cid:hero"></p>`,
 		"--inline", `{"cid":"hero","file_path":"logo.png"}`,
 		"--template-id", "70",
+		"--no-signature",
 	}, f, stdout)
-	if err == nil || !strings.Contains(err.Error(), "plain-text templates") {
-		t.Fatalf("expected plain-text template inline rejection, got %v", err)
+	if err != nil {
+		t.Fatalf("expected plain-text template to ignore explicit inline, got %v", err)
+	}
+	data := decodeShortcutEnvelopeData(t, stdout)
+	if data["draft_id"] != "draft_plain_send" {
+		t.Fatalf("draft_id = %v", data["draft_id"])
 	}
 }
 
-func TestMailDraftCreate_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
+func TestMailDraftCreate_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 	chdirTemp(t)
 	if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
 		t.Fatal(err)
@@ -1194,7 +1207,7 @@ func TestMailDraftCreate_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	reg.Register(&httpmock.Stub{
 		Method: "GET",
-		URL:    "/user_mailboxes/me/templates/71",
+		URL:    "/user_mailboxes/me@example.com/templates/71",
 		Body: map[string]interface{}{
 			"code": 0,
 			"data": map[string]interface{}{
@@ -1207,15 +1220,29 @@ func TestMailDraftCreate_TemplatePlainTextRejectsExplicitInline(t *testing.T) {
 			},
 		},
 	})
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me@example.com/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "draft_plain_create"},
+		},
+	})
 
 	err := runMountedMailShortcut(t, MailDraftCreate, []string{
 		"+draft-create",
+		"--from", "me@example.com",
 		"--body", `<p><img src="cid:hero"></p>`,
 		"--inline", `{"cid":"hero","file_path":"logo.png"}`,
 		"--template-id", "71",
+		"--no-signature",
 	}, f, stdout)
-	if err == nil || !strings.Contains(err.Error(), "plain-text templates") {
-		t.Fatalf("expected plain-text template inline rejection, got %v", err)
+	if err != nil {
+		t.Fatalf("expected plain-text template to ignore explicit inline, got %v", err)
+	}
+	data := decodeShortcutEnvelopeData(t, stdout)
+	if data["draft_id"] != "draft_plain_create" {
+		t.Fatalf("draft_id = %v", data["draft_id"])
 	}
 }
 

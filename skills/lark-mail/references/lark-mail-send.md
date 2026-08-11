@@ -77,7 +77,7 @@ lark-cli mail +send --to alice@example.com --subject '测试' --body '<p>test</p
 | `--bcc <emails>` | 否 | 密送邮箱。可重复传参，也可在单次值内用逗号分隔 |
 | `--plain-text` | 否 | 强制纯文本模式，忽略 HTML 自动检测。不可与 `--inline` 同时使用。纯文本模式下也会自动追加纯文本签名（HTML 签名经 `PlainTextFromHTML` 转换，内联图片丢弃） |
 | `--attach <paths>` | 否 | 附件文件路径。可重复传参，每次值也可用逗号分隔；按展开顺序追加。相对路径。当附件导致 EML 总大小超过 25 MB 时，超出部分自动上传为超大附件（HTML 邮件插入下载卡片，纯文本邮件追加下载链接），单个文件上限 3 GB |
-| `--inline <json>` | 否 | 高级用法：手动指定内嵌图片 CID 映射。可重复传参；每次值必须是 JSON object 或 array，不按逗号切分，按传入顺序追加。推荐直接在 `--body` 中使用 `<img src="./path" />`（自动解析）。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'`，在 body 中用 `<img src="cid:mycid">` 引用。不可与 `--plain-text` 同时使用 |
+| `--inline <json>` | 否 | 高级用法：手动指定内嵌图片 CID 映射。可重复传参；每次值可为 JSON object 或 array（`null` 按空值忽略以兼容旧行为），不按逗号切分，按传入顺序追加。推荐直接在 `--body` 中使用 `<img src="./path" />`（自动解析）。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'`，在 body 中用 `<img src="cid:mycid">` 引用。不可与 `--plain-text` 同时使用 |
 | `--signature-id <id>` | 否 | 签名 ID。附加邮箱签名到正文末尾。运行 `mail +signature` 查看可用签名。与 `--no-signature` 互斥 |
 | `--no-signature` | 否 | 跳过默认签名自动追加。与 `--signature-id` 互斥，同时使用时返回参数校验错误（退出码 2） |
 | `--priority <level>` | 否 | 邮件优先级：`high`、`normal`、`low`。省略或 `normal` 时不设置优先级 |
@@ -211,7 +211,7 @@ lark-cli mail user_mailbox.drafts cancel_scheduled_send --params '{"user_mailbox
 
 - 使用 EML 构建器生成完整 MIME 邮件并 base64url 编码后发送。
 - `--attach` 作为普通附件添加。可重复传参，每次值也可逗号分隔；相对路径。
-- `--inline` 可重复传参；每次值接受 JSON object 或 JSON array，不按逗号切分。每项需提供 `cid`（唯一标识符，可用随机十六进制字符串）和 `file_path`（相对路径），作为 inline part 嵌入邮件。
+- `--inline` 可重复传参；每次值接受 JSON object 或 JSON array，`null` 按空值忽略以兼容旧行为，不按逗号切分。每项需提供 `cid`（唯一标识符，可用随机十六进制字符串）和 `file_path`（相对路径），作为 inline part 嵌入邮件。
 - **超大附件**：当附件导致 EML 总大小（headers + body + inline images + attachments，base64 编码后）超过 25 MB 时，超出的文件自动通过 `medias/upload_*` API 上传到云端。HTML 邮件插入与飞书客户端一致的下载卡片；纯文本邮件追加包含文件名、大小和下载链接的文本块。单个文件上限 3 GB，总附件数量上限 250 个。
 
 ## 相关命令
