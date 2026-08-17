@@ -31,7 +31,7 @@ var MailTemplateCreate = common.Shortcut{
 		{Name: "cc", Type: "string_array", Desc: "Optional. Default Cc recipient email address. Repeat --cc once per recipient; quote each value."},
 		{Name: "bcc", Type: "string_array", Desc: "Optional. Default Bcc recipient email address. Repeat --bcc once per recipient; quote each value."},
 		{Name: "attach", Type: "string_array", Desc: "Optional. Non-inline attachment file path, relative path only. Repeat --attach once per file; order is preserved for LARGE/SMALL classification."},
-		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image; quote each value. Example value: '{\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}'."},
+		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image; quote each value. Example value: '{\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}'. file_path must be relative. Reference it from HTML as <img src=\"cid:<unique-id>\">. CID must be unique, e.g. a random hex string."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		mailboxID := resolveComposeMailboxID(runtime)

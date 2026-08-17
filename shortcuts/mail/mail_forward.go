@@ -38,7 +38,7 @@ var MailForward = common.Shortcut{
 		{Name: "bcc", Type: "string_array", Desc: "BCC email address. Repeat --bcc once per recipient; quote each value. Display-name format is supported."},
 		{Name: "plain-text", Type: "bool", Desc: "Force plain-text mode, ignoring all HTML auto-detection. Cannot be used with --inline."},
 		{Name: "attach", Type: "string_array", Desc: "Attachment file path, appended after original attachments (relative path only). Repeat --attach once per file; quote each value."},
-		{Name: "inline", Type: "string_array", Desc: "Inline image as one JSON object. Repeat --inline once per image; quote each value. Example value: '{\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}'. Cannot be used with --plain-text."},
+		{Name: "inline", Type: "string_array", Desc: "Inline image as one JSON object. Repeat --inline once per image; quote each value. Example value: '{\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}'. file_path must be relative. Reference it from HTML as <img src=\"cid:<unique-id>\">. CID must be unique, e.g. a random hex string. Cannot be used with --plain-text."},
 		{Name: "confirm-send", Type: "bool", Desc: "Send the forward immediately instead of saving as draft. Only use after the user has explicitly confirmed recipients and content."},
 		{Name: "send-time", Desc: "Scheduled send time as a Unix timestamp in seconds. Must be at least 5 minutes in the future. Use with --confirm-send to schedule the email."},
 		{Name: "request-receipt", Type: "bool", Desc: "Request a read receipt (Message Disposition Notification, RFC 3798) addressed to the sender. Recipient mail clients may prompt the user, send automatically, or silently ignore — delivery of a receipt is not guaranteed."},
