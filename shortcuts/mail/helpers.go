@@ -2397,12 +2397,14 @@ func parseInlineSpecs(raw string) ([]InlineSpec, error) {
 		return nil, mailValidationParamError("--inline", "--inline must be a JSON object or array, e.g. '{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}' or '[{\"cid\":\"a1b2c3d4e5f6a7b8c9d0\",\"file_path\":\"./banner.png\"}]'")
 	}
 	for i, s := range specs {
-		if strings.TrimSpace(s.CID) == "" {
+		cid := normalizeInlineCID(s.CID)
+		if cid == "" {
 			return nil, mailValidationParamError("--inline", "--inline entry %d: \"cid\" must not be empty", i)
 		}
 		if strings.TrimSpace(s.FilePath) == "" {
 			return nil, mailValidationParamError("--inline", "--inline entry %d: \"file_path\" must not be empty", i)
 		}
+		specs[i].CID = cid
 	}
 	return specs, nil
 }

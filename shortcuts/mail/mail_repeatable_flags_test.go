@@ -99,7 +99,7 @@ func TestNormalizeRepeatedInlineFlagsAppendsObjectAndArrayValues(t *testing.T) {
 
 func TestNormalizeRepeatedInlineFlagsAllowsDuplicateCIDForCompatibility(t *testing.T) {
 	raw, err := normalizeInlineFlagValues([]string{
-		`{"cid":"Logo","file_path":"./a.png"}`,
+		`{"cid":"logo","file_path":"./a.png"}`,
 		`[{"cid":"<logo>","file_path":"./b.png"}]`,
 	})
 	if err != nil {
@@ -111,6 +111,13 @@ func TestNormalizeRepeatedInlineFlagsAllowsDuplicateCIDForCompatibility(t *testi
 	}
 	if len(specs) != 2 {
 		t.Fatalf("inline specs = %#v, want 2 entries", specs)
+	}
+	want := []InlineSpec{
+		{CID: "logo", FilePath: "./a.png"},
+		{CID: "logo", FilePath: "./b.png"},
+	}
+	if !reflect.DeepEqual(specs, want) {
+		t.Fatalf("inline specs = %#v, want %#v", specs, want)
 	}
 }
 

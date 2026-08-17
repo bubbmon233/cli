@@ -27,6 +27,15 @@ func decodeCapturedBody(t *testing.T, stub *httpmock.Stub) map[string]interface{
 	return out
 }
 
+func assertCapturedRawEMLOmitsContentID(t *testing.T, stub *httpmock.Stub, cid string) {
+	t.Helper()
+	raw := decodeCapturedRawEML(t, stub.CapturedBody)
+	contentID := "Content-ID: <" + cid + ">"
+	if strings.Contains(raw, contentID) {
+		t.Fatalf("raw EML should omit inline %s, got:\n%s", contentID, raw)
+	}
+}
+
 // TestMailTemplateCreate_Happy verifies a +template-create call with no local
 // <img> references and no --attach files POSTs the expected body and emits
 // the server's echoed template.
@@ -1172,14 +1181,15 @@ func TestMailSend_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 			},
 		},
 	})
-	reg.Register(&httpmock.Stub{
+	draftStub := &httpmock.Stub{
 		Method: "POST",
 		URL:    "/user_mailboxes/me@example.com/drafts",
 		Body: map[string]interface{}{
 			"code": 0,
 			"data": map[string]interface{}{"draft_id": "draft_plain_send"},
 		},
-	})
+	}
+	reg.Register(draftStub)
 
 	err := runMountedMailShortcut(t, MailSend, []string{
 		"+send",
@@ -1197,6 +1207,7 @@ func TestMailSend_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 	if data["draft_id"] != "draft_plain_send" {
 		t.Fatalf("draft_id = %v", data["draft_id"])
 	}
+	assertCapturedRawEMLOmitsContentID(t, draftStub, "hero")
 }
 
 func TestMailDraftCreate_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
@@ -1220,14 +1231,15 @@ func TestMailDraftCreate_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 			},
 		},
 	})
-	reg.Register(&httpmock.Stub{
+	draftStub := &httpmock.Stub{
 		Method: "POST",
 		URL:    "/user_mailboxes/me@example.com/drafts",
 		Body: map[string]interface{}{
 			"code": 0,
 			"data": map[string]interface{}{"draft_id": "draft_plain_create"},
 		},
-	})
+	}
+	reg.Register(draftStub)
 
 	err := runMountedMailShortcut(t, MailDraftCreate, []string{
 		"+draft-create",
@@ -1244,6 +1256,7 @@ func TestMailDraftCreate_TemplatePlainTextIgnoresExplicitInline(t *testing.T) {
 	if data["draft_id"] != "draft_plain_create" {
 		t.Fatalf("draft_id = %v", data["draft_id"])
 	}
+	assertCapturedRawEMLOmitsContentID(t, draftStub, "hero")
 }
 
 func TestMailTemplateUpdate_PatchFileControlsFinalInlinePlainTextCheck(t *testing.T) {
