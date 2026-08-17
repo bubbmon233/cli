@@ -44,7 +44,7 @@ lark-cli mail +reply-all --message-id <邮件ID> --body '<p><b>已完成</b>，�
 lark-cli mail +reply-all --message-id <邮件ID> --body '<p>同步更新</p>' --to lead@example.com --cc pm@example.com
 
 # 从回复名单中排除某些地址（草稿）
-lark-cli mail +reply-all --message-id <邮件ID> --body '<p>见上</p>' --remove bot@example.com,noreply@example.com
+lark-cli mail +reply-all --message-id <邮件ID> --body '<p>见上</p>' --remove bot@example.com --remove noreply@example.com
 
 # 回复全部时插入内嵌图片（推荐：直接用相对路径，自动解析）
 lark-cli mail +reply-all --message-id <邮件ID> --body '<p>详见图示：<img src="./logo.png" /></p>'
@@ -68,13 +68,13 @@ lark-cli mail +reply-all --message-id <邮件ID> --body '测试' --dry-run
 | `--body-file <path>` | 二选一 | 从文件读取回复正文 HTML（相对路径，仅限 cwd 子树）。与 `--body` 互斥。文件大小上限 32 MB |
 | `--from <email>` | 否 | 发件人邮箱地址（EML From 头）。使用别名（send_as）发信时，设为别名地址并配合 `--mailbox` 指定所属邮箱。默认读取邮箱主地址 |
 | `--mailbox <email>` | 否 | 邮箱地址，指定草稿所属的邮箱（默认回退到 `--from`，再回退到 `me`）。当发件人（`--from`）与邮箱不同时使用。可通过 `accessible_mailboxes` 查询可用邮箱 |
-| `--to <emails>` | 否 | 额外收件人。可重复传参，也可在单次值内用逗号分隔（追加到自动聚合结果）；display name 含逗号时建议单独作为一次 `--to` 传入或加引号 |
-| `--cc <emails>` | 否 | 额外抄送。可重复传参，也可在单次值内用逗号分隔 |
-| `--bcc <emails>` | 否 | 密送邮箱。可重复传参，也可在单次值内用逗号分隔。与 `--event-*` 不兼容（见 `+send` 日程邀请约束） |
-| `--remove <emails>` | 否 | 从自动聚合结果中排除的邮箱。可重复传参，也可在单次值内用逗号分隔；按展开顺序处理 |
+| `--to <email>` | 否 | 额外收件人。多个额外收件人请重复传 `--to`，每次只放一个地址；追加到自动聚合结果；display name 含逗号或空格时，整体加引号 |
+| `--cc <email>` | 否 | 额外抄送。多个抄送请重复传 `--cc`，每次只放一个地址 |
+| `--bcc <email>` | 否 | 密送邮箱。多个密送请重复传 `--bcc`，每次只放一个地址。与 `--event-*` 不兼容（见 `+send` 日程邀请约束） |
+| `--remove <email>` | 否 | 从自动聚合结果中排除的邮箱。多个排除地址请重复传 `--remove`，每次只放一个地址；按传入顺序处理 |
 | `--plain-text` | 否 | 强制纯文本模式，忽略所有 HTML 自动检测。不可与 `--inline` 同时使用。纯文本模式下也会自动追加纯文本签名（HTML 签名经 `PlainTextFromHTML` 转换，内联图片丢弃） |
-| `--attach <paths>` | 否 | 附件文件路径。可重复传参，每次值也可用逗号分隔；按展开顺序追加。相对路径。当附件导致 EML 总大小超过 25 MB 时，超出部分自动上传为超大附件（HTML 邮件插入下载卡片，纯文本邮件追加下载链接），单个文件上限 3 GB |
-| `--inline <json>` | 否 | 高级用法：手动指定内嵌图片 CID 映射。可重复传参；每次值可为 JSON object 或 array（`null` 按空值忽略以兼容旧行为），不按逗号切分，按传入顺序追加。推荐直接在 `--body` 中使用 `<img src="./path" />`（自动解析）。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'`，在 body 中用 `<img src="cid:mycid">` 引用。不可与 `--plain-text` 同时使用 |
+| `--attach <path>` | 否 | 附件文件路径。多个附件请重复传 `--attach`，每次只放一个相对路径；路径包含空格、括号或中文时用引号包住；按传入顺序追加。当附件导致 EML 总大小超过 25 MB 时，超出部分自动上传为超大附件（HTML 邮件插入下载卡片，纯文本邮件追加下载链接），单个文件上限 3 GB |
+| `--inline <json>` | 否 | 高级用法：手动指定内嵌图片 CID 映射。多个 inline 图片请重复传 `--inline`，每次只放一个 JSON object：`'{"cid":"mycid","file_path":"./logo.png"}'`。推荐直接在 `--body` 中使用 `<img src="./path" />`（自动解析）。在 body 中用 `<img src="cid:mycid">` 引用。不可与 `--plain-text` 同时使用 |
 | `--signature-id <id>` | 否 | 签名 ID。附加邮箱签名到回复正文与引用块之间。运行 `mail +signature` 查看可用签名。与 `--no-signature` 互斥 |
 | `--no-signature` | 否 | 跳过默认签名自动追加。与 `--signature-id` 互斥，同时使用时返回参数校验错误（退出码 2） |
 | `--priority <level>` | 否 | 邮件优先级：`high`、`normal`、`low`。省略或 `normal` 时不设置优先级 |
