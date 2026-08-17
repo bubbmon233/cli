@@ -52,7 +52,7 @@ var MailDraftCreate = common.Shortcut{
 		{Name: "bcc", Type: "string_array", Desc: "Optional. Bcc recipient email address. Repeat --bcc once per recipient. Display-name format is supported."},
 		{Name: "plain-text", Type: "bool", Desc: "Force plain-text mode, ignoring HTML auto-detection. Cannot be used with --inline."},
 		{Name: "attach", Type: "string_array", Desc: "Optional. Regular attachment file path, relative path only. Repeat --attach once per file; quote paths with spaces, parentheses, or non-ASCII characters. Each path must point to a readable local file."},
-		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image; values are not comma-split. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. Cannot be used with --plain-text."},
+		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. Cannot be used with --plain-text."},
 		{Name: "request-receipt", Type: "bool", Desc: "Request a read receipt (Message Disposition Notification, RFC 3798) addressed to the sender. Recipient mail clients may prompt the user, send automatically, or silently ignore — delivery of a receipt is not guaranteed."},
 		{Name: "template-id", Desc: "Optional. Apply a saved template by ID (decimal integer string) before composing. The template's subject/body/to/cc/bcc/attachments are merged with user-supplied flags (user flags win). Requires --as user."},
 		signatureFlag,

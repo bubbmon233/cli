@@ -35,7 +35,7 @@ var MailReply = common.Shortcut{
 		{Name: "bcc", Type: "string_array", Desc: "BCC email address. Repeat --bcc once per recipient."},
 		{Name: "plain-text", Type: "bool", Desc: "Force plain-text mode, ignoring all HTML auto-detection. Cannot be used with --inline."},
 		{Name: "attach", Type: "string_array", Desc: "Attachment file path, relative path only. Repeat --attach once per file; quote paths with spaces, parentheses, or non-ASCII characters."},
-		{Name: "inline", Type: "string_array", Desc: "Inline image as one JSON object. Repeat --inline once per image; values are not comma-split. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. Cannot be used with --plain-text."},
+		{Name: "inline", Type: "string_array", Desc: "Inline image as one JSON object. Repeat --inline once per image. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}. Cannot be used with --plain-text."},
 		{Name: "confirm-send", Type: "bool", Desc: "Send the reply immediately instead of saving as draft. Only use after the user has explicitly confirmed recipients and content."},
 		{Name: "send-time", Desc: "Scheduled send time as a Unix timestamp in seconds. Must be at least 5 minutes in the future. Use with --confirm-send to schedule the email."},
 		{Name: "request-receipt", Type: "bool", Desc: "Request a read receipt (Message Disposition Notification, RFC 3798) addressed to the sender. Recipient mail clients may prompt the user, send automatically, or silently ignore — delivery of a receipt is not guaranteed."},

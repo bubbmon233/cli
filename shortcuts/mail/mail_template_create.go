@@ -31,7 +31,7 @@ var MailTemplateCreate = common.Shortcut{
 		{Name: "cc", Type: "string_array", Desc: "Optional. Default Cc recipient email address. Repeat --cc once per recipient."},
 		{Name: "bcc", Type: "string_array", Desc: "Optional. Default Bcc recipient email address. Repeat --bcc once per recipient."},
 		{Name: "attach", Type: "string_array", Desc: "Optional. Non-inline attachment file path, relative path only. Repeat --attach once per file; order is preserved for LARGE/SMALL classification."},
-		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image; values are not comma-split. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
+		{Name: "inline", Type: "string_array", Desc: "Optional. Inline image as one JSON object. Repeat --inline once per image. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		mailboxID := resolveComposeMailboxID(runtime)

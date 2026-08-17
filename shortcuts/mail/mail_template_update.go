@@ -36,7 +36,7 @@ var MailTemplateUpdate = common.Shortcut{
 		{Name: "set-cc", Desc: "Replace the Cc recipient list. Pass --set-cc=\"\" to clear the list."},
 		{Name: "set-bcc", Desc: "Replace the Bcc recipient list. Pass --set-bcc=\"\" to clear the list."},
 		{Name: "attach", Type: "string_array", Desc: "Additional non-inline attachment file path. Repeat --attach once per file; each file is uploaded to Drive and appended in flag order."},
-		{Name: "inline", Type: "string_array", Desc: "Additional inline image as one JSON object. Repeat --inline once per image; values are not comma-split. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
+		{Name: "inline", Type: "string_array", Desc: "Additional inline image as one JSON object. Repeat --inline once per image. Example: {\"cid\":\"<unique-id>\",\"file_path\":\"<relative-path>\"}."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		if runtime.Bool("print-patch-template") {
