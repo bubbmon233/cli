@@ -49,12 +49,11 @@ lark-cli mail +template-create --as user \
 | `--subject <text>` | 否 | 默认主题 |
 | `--template-content <html>` | 否* | 模板正文。HTML 首选；支持 `<img src="./local.png" />` 相对路径自动上传到 Drive 并改写为 `cid:` |
 | `--template-content-file <path>` | 否* | 从文件加载正文内容；与 `--template-content` 互斥 |
-| `--plain-text` | 否 | 标记为纯文本模式（`is_plain_text_mode=true`）。不可与 `--inline` 同时使用；`+send --template-id` 套用时会走 plain-text 正文拼接 |
-| `--to <emails>` | 否 | 默认收件人列表。可重复传参，也可在单次值内用逗号分隔；display name 含逗号时建议单独作为一次 `--to` 传入或加引号。支持 `Name <email>` 格式 |
-| `--cc <emails>` | 否 | 默认抄送。可重复传参，也可在单次值内用逗号分隔 |
-| `--bcc <emails>` | 否 | 默认密送。可重复传参，也可在单次值内用逗号分隔 |
-| `--attach <paths>` | 否 | 非 inline 附件路径。可重复传参，每次值也可用逗号分隔；每个文件按展开顺序上传到 Drive |
-| `--inline <json>` | 否 | 手动指定 inline 图片 CID 映射。可重复传参；每次值可为 JSON object 或 array（`null` 按空值忽略以兼容旧行为），不按逗号切分，按传入顺序追加。格式：`'{"cid":"mycid","file_path":"./logo.png"}'` 或 `'[{"cid":"mycid","file_path":"./logo.png"}]'` |
+| `--plain-text` | 否 | 标记为纯文本模式（`is_plain_text_mode=true`）。仍可带内嵌图片，但 `+send --template-id` 套用时会走 plain-text 正文拼接 |
+| `--to <emails>` | 否 | 默认收件人列表，逗号分隔，支持 `Name <email>` 格式 |
+| `--cc <emails>` | 否 | 默认抄送 |
+| `--bcc <emails>` | 否 | 默认密送 |
+| `--attach <paths>` | 否 | 非 inline 附件路径，逗号分隔。每个文件按 `--attach` 书写顺序上传到 Drive |
 | `--mailbox <email>` | 否 | 所属邮箱，默认 `me`（当前用户主邮箱） |
 | `--dry-run` | 否 | 仅打印计划中的 API 调用链，不真实执行 |
 
@@ -83,7 +82,7 @@ lark-cli mail +template-create --as user \
 ## 顺序约束
 
 - inline 图片按正文中 `<img>` 出现顺序处理
-- 非 inline 按 `--attach` 展开顺序处理；重复路径不会去重
+- 非 inline 按 `--attach` 书写顺序处理；重复路径不会去重
 
 ## 返回值
 
