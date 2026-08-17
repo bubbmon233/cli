@@ -50,11 +50,11 @@ lark-cli mail +template-create --as user \
 | `--template-content <html>` | 否* | 模板正文。HTML 首选；支持 `<img src="./local.png" />` 相对路径自动上传到 Drive 并改写为 `cid:` |
 | `--template-content-file <path>` | 否* | 从文件加载正文内容；与 `--template-content` 互斥 |
 | `--plain-text` | 否 | 标记为纯文本模式（`is_plain_text_mode=true`）。不可与 `--inline` 同时使用；`+send --template-id` 套用时会走 plain-text 正文拼接 |
-| `--to <email>` | 否 | 默认收件人列表。多个默认收件人请重复传 `--to`，每次只放一个地址；display name 含逗号或空格时，整体加引号。支持 `Name <email>` 格式 |
-| `--cc <email>` | 否 | 默认抄送。多个抄送请重复传 `--cc`，每次只放一个地址 |
-| `--bcc <email>` | 否 | 默认密送。多个密送请重复传 `--bcc`，每次只放一个地址 |
-| `--attach <path>` | 否 | 非 inline 附件路径。多个附件请重复传 `--attach`，每次只放一个相对路径；路径包含空格、括号或中文时用引号包住；每个文件按传入顺序上传到 Drive |
-| `--inline <json>` | 否 | 手动指定 inline 图片 CID 映射。多个 inline 图片请重复传 `--inline`，每次只放一个 JSON object：`'{"cid":"mycid","file_path":"./logo.png"}'` |
+| `--to '<email>'` | 否 | 默认收件人列表。多个默认收件人请重复传 `--to`，每次只放一个地址，参数值用单引号包住。支持 `Name <email>` 格式 |
+| `--cc '<email>'` | 否 | 默认抄送。多个抄送请重复传 `--cc`，每次只放一个地址，参数值用单引号包住 |
+| `--bcc '<email>'` | 否 | 默认密送。多个密送请重复传 `--bcc`，每次只放一个地址，参数值用单引号包住 |
+| `--attach '<path>'` | 否 | 非 inline 附件路径。多个附件请重复传 `--attach`，每次只放一个相对路径，参数值用单引号包住；每个文件按传入顺序上传到 Drive |
+| `--inline '<json>'` | 否 | 手动指定 inline 图片 CID 映射。多个 inline 图片请重复传 `--inline`，每次只放一个 JSON object，并用单引号包住：`'{"cid":"mycid","file_path":"./logo.png"}'` |
 | `--mailbox <email>` | 否 | 所属邮箱，默认 `me`（当前用户主邮箱） |
 | `--dry-run` | 否 | 仅打印计划中的 API 调用链，不真实执行 |
 

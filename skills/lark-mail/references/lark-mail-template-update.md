@@ -70,8 +70,8 @@ lark-cli mail +template-update --as user --template-id 712345 \
 | `--set-to <emails>` | 用单次参数值替换默认收件人列表；多个地址仍在该值内用逗号分隔，传 `--set-to=""` 可清空 |
 | `--set-cc <emails>` | 用单次参数值替换默认抄送；多个地址仍在该值内用逗号分隔，传 `--set-cc=""` 可清空 |
 | `--set-bcc <emails>` | 用单次参数值替换默认密送；多个地址仍在该值内用逗号分隔，传 `--set-bcc=""` 可清空 |
-| `--attach <path>` | 追加非 inline 附件，不替换已有附件。多个附件请重复传 `--attach`，每次只放一个相对路径；路径包含空格、括号或中文时用引号包住；按传入顺序上传 |
-| `--inline <json>` | 追加 inline 图片，不替换已有附件。多个 inline 图片请重复传 `--inline`，每次只放一个 JSON object：`'{"cid":"mycid","file_path":"./logo.png"}'`；最终模板为纯文本模式时会被拒绝 |
+| `--attach '<path>'` | 追加非 inline 附件，不替换已有附件。多个附件请重复传 `--attach`，每次只放一个相对路径，参数值用单引号包住；按传入顺序上传 |
+| `--inline '<json>'` | 追加 inline 图片，不替换已有附件。多个 inline 图片请重复传 `--inline`，每次只放一个 JSON object，并用单引号包住：`'{"cid":"mycid","file_path":"./logo.png"}'`；最终模板为纯文本模式时会被拒绝 |
 
 ### 结构化 patch
 
