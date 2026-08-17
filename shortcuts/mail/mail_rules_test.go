@@ -156,6 +156,120 @@ func TestMailRuleListShortcutDecodesResponse(t *testing.T) {
 	}
 }
 
+func TestMailRuleUpdateAcceptsNameDryRun(t *testing.T) {
+	f, stdout, _, _ := mailShortcutTestFactory(t)
+	if err := runMountedMailShortcut(t, MailRuleUpdate, []string{
+		"+rule-update",
+		"--rule-id", "rule_1",
+		"--name", "Renamed",
+		"--dry-run",
+		"--format", "json",
+	}, f, stdout); err != nil {
+		t.Fatalf("run +rule-update --name --dry-run error = %v", err)
+	}
+	data := decodeShortcutEnvelopeData(t, stdout)
+	rawPatch, ok := data["raw_request_patch"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("raw_request_patch missing: %#v", data)
+	}
+	if got := rawPatch["name"]; got != "Renamed" {
+		t.Fatalf("raw_request_patch.name = %v, want Renamed", got)
+	}
+}
+
+func TestMailRuleUpdateNamePreservesCollectionsAndOutputsDiff(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	currentRule := map[string]interface{}{
+		"rule_id":                  "rule_1",
+		"name":                     "Old Name",
+		"is_enable":                true,
+		"ignore_the_rest_of_rules": false,
+		"condition": map[string]interface{}{
+			"match_type": 1,
+			"items": []interface{}{
+				map[string]interface{}{"type": 6, "operator": 1, "input": "Alpha"},
+			},
+		},
+		"action": map[string]interface{}{
+			"items": []interface{}{
+				map[string]interface{}{"type": 3},
+			},
+		},
+	}
+	updatedRule := map[string]interface{}{}
+	for k, v := range currentRule {
+		updatedRule[k] = v
+	}
+	updatedRule["name"] = "Renamed"
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "open-apis/mail/v1/user_mailboxes/me/rules",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"rules": []interface{}{currentRule},
+			},
+		},
+	})
+	putStub := &httpmock.Stub{
+		Method: "PUT",
+		URL:    "open-apis/mail/v1/user_mailboxes/me/rules/rule_1",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"rule": updatedRule,
+			},
+		},
+	}
+	reg.Register(putStub)
+
+	if err := runMountedMailShortcut(t, MailRuleUpdate, []string{
+		"+rule-update",
+		"--rule-id", "rule_1",
+		"--name", "Renamed",
+		"--format", "json",
+	}, f, stdout); err != nil {
+		t.Fatalf("run +rule-update --name error = %v", err)
+	}
+	reg.Verify(t)
+
+	var putBody map[string]interface{}
+	if err := json.Unmarshal(putStub.CapturedBody, &putBody); err != nil {
+		t.Fatalf("unmarshal PUT body: %v", err)
+	}
+	if got := putBody["name"]; got != "Renamed" {
+		t.Fatalf("PUT body name = %v, want Renamed", got)
+	}
+	assertJSONEqual(t, putBody["condition"], currentRule["condition"], "condition")
+	assertJSONEqual(t, putBody["action"], currentRule["action"], "action")
+
+	data := decodeShortcutEnvelopeData(t, stdout)
+	diff, ok := data["diff"].([]interface{})
+	if !ok || len(diff) != 1 {
+		t.Fatalf("diff = %#v, want one name entry", data["diff"])
+	}
+	entry := diff[0].(map[string]interface{})
+	if entry["field"] != "name" || entry["before"] != "Old Name" || entry["after"] != "Renamed" {
+		t.Fatalf("diff entry = %#v, want name Old Name -> Renamed", entry)
+	}
+}
+
+func assertJSONEqual(t *testing.T, got, want interface{}, label string) {
+	t.Helper()
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got %s: %v", label, err)
+	}
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal want %s: %v", label, err)
+	}
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("%s = %s, want %s", label, gotJSON, wantJSON)
+	}
+}
+
 func TestRuleReorderComputesMoveTarget(t *testing.T) {
 	current := []mailRuleEnvelope{{RuleID: "a"}, {RuleID: "b"}, {RuleID: "c"}}
 	f, _, _, _ := mailShortcutTestFactory(t)

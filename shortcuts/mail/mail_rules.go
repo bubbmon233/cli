@@ -196,9 +196,7 @@ var MailRuleCreate = common.Shortcut{
 	Scopes:      []string{"mail:user_mailbox.rule:write"},
 	AuthTypes:   []string{"user"},
 	HasFormat:   true,
-	Flags: append([]common.Flag{}, append(mailRuleWriteFlags(),
-		common.Flag{Name: "name", Desc: "Required. Rule name."},
-	)...),
+	Flags:       mailRuleWriteFlags(),
 	Validate: func(ctx context.Context, rt *common.RuntimeContext) error {
 		_, _, err := buildRuleSpecFromFlags(rt, true)
 		return err
@@ -373,6 +371,7 @@ var MailRuleReorder = common.Shortcut{
 func mailRuleWriteFlags() []common.Flag {
 	flags := append([]common.Flag{}, mailRuleCommonFlags...)
 	flags = append(flags,
+		common.Flag{Name: "name", Desc: "Rule name. Required for create; optional replacement for update."},
 		common.Flag{Name: "enable", Type: "bool", Desc: "Enable the rule."},
 		common.Flag{Name: "disable", Type: "bool", Desc: "Disable the rule."},
 		common.Flag{Name: "match", Default: "all", Enum: []string{"all", "any"}, Desc: "Condition match mode: all or any (default: all)."},
