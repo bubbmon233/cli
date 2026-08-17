@@ -223,6 +223,9 @@ var MailTemplateUpdate = common.Shortcut{
 				maxTemplateContentBytes/(1024*1024),
 				float64(len(tpl.TemplateContent))/1024/1024)
 		}
+		if err := validateInlineCIDs(tpl.TemplateContent, inlineSpecCIDs(inlineSpecs), templateInlineCIDsFromAttachments(tpl.Attachments)); err != nil {
+			return err
+		}
 
 		// Re-resolve <img> references against the (possibly updated) content.
 		rewritten, newAtts, err := buildTemplatePayloadFromFlags(
@@ -282,6 +285,9 @@ var MailTemplateUpdate = common.Shortcut{
 			if tpl.Attachments[i].Body == "" {
 				tpl.Attachments[i].Body = tpl.Attachments[i].ID
 			}
+		}
+		if err := validateTemplateInlinePayload(tpl.TemplateContent, tpl.Attachments); err != nil {
+			return err
 		}
 
 		inlineCount, largeCount := countAttachmentsByType(tpl.Attachments)

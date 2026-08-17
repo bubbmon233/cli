@@ -501,6 +501,65 @@ func buildTemplatePayloadFromFlags(
 	return content, builder.attachments, nil
 }
 
+func templateInlineCIDsFromAttachments(atts []templateAttachment) []string {
+	if len(atts) == 0 {
+		return nil
+	}
+	cids := make([]string, 0, len(atts))
+	for _, a := range atts {
+		if !a.IsInline {
+			continue
+		}
+		cid := normalizeInlineCID(a.CID)
+		if cid == "" {
+			continue
+		}
+		cids = append(cids, cid)
+	}
+	return cids
+}
+
+func inlineSpecCIDs(specs []InlineSpec) []string {
+	if len(specs) == 0 {
+		return nil
+	}
+	cids := make([]string, 0, len(specs))
+	for _, s := range specs {
+		cid := normalizeInlineCID(s.CID)
+		if cid == "" {
+			continue
+		}
+		cids = append(cids, cid)
+	}
+	return cids
+}
+
+func validateUniqueTemplateInlineCIDs(atts []templateAttachment) error {
+	seen := make(map[string]string, len(atts))
+	for _, a := range atts {
+		if !a.IsInline {
+			continue
+		}
+		cid := normalizeInlineCID(a.CID)
+		if cid == "" {
+			continue
+		}
+		key := strings.ToLower(cid)
+		if prev, ok := seen[key]; ok {
+			return mailValidationParamError("--inline", "template inline cid %q is duplicated by attachments %q and %q", cid, prev, a.Filename)
+		}
+		seen[key] = a.Filename
+	}
+	return nil
+}
+
+func validateTemplateInlinePayload(content string, atts []templateAttachment) error {
+	if err := validateUniqueTemplateInlineCIDs(atts); err != nil {
+		return err
+	}
+	return validateInlineCIDs(content, templateInlineCIDsFromAttachments(atts), nil)
+}
+
 // replaceImgSrcOnce rewrites the first <img src="rawSrc"> occurrence to
 // <img src="newSrc">, preserving the quoting style of the original.
 func replaceImgSrcOnce(html, rawSrc, newSrc string) string {

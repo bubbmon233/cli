@@ -566,6 +566,37 @@ func TestMailTemplateCreate_InlineImageRewrite(t *testing.T) {
 	}
 }
 
+func TestMailTemplateCreate_ValidatesInlineCIDs(t *testing.T) {
+	t.Run("missing cid reference", func(t *testing.T) {
+		f, stdout, _, _ := mailShortcutTestFactory(t)
+		err := runMountedMailShortcut(t, MailTemplateCreate, []string{
+			"+template-create",
+			"--name", "Broken",
+			"--template-content", `<p><img src="cid:missing"></p>`,
+		}, f, stdout)
+		if err == nil || !strings.Contains(err.Error(), "missing inline cid") {
+			t.Fatalf("expected missing cid validation error, got %v", err)
+		}
+	})
+
+	t.Run("orphaned inline flag", func(t *testing.T) {
+		chdirTemp(t)
+		if err := os.WriteFile("unused.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f, stdout, _, _ := mailShortcutTestFactory(t)
+		err := runMountedMailShortcut(t, MailTemplateCreate, []string{
+			"+template-create",
+			"--name", "Broken",
+			"--template-content", `<p>No inline image</p>`,
+			"--inline", `{"cid":"orphan","file_path":"unused.png"}`,
+		}, f, stdout)
+		if err == nil || !strings.Contains(err.Error(), "orphan") {
+			t.Fatalf("expected orphaned inline validation error, got %v", err)
+		}
+	})
+}
+
 // TestMailTemplateCreate_PrettyOutput covers the OutFormat pretty callback
 // for +template-create Execute.
 func TestMailTemplateCreate_PrettyOutput(t *testing.T) {
@@ -1383,6 +1414,79 @@ func TestMailTemplateUpdate_PatchFileControlsFinalInlinePlainTextCheck(t *testin
 			t.Fatalf("inline attachment is_inline = %v, want true", att["is_inline"])
 		}
 	})
+}
+
+func TestMailTemplateUpdate_ValidatesLatestInlineCIDs(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/templates/74",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"template": map[string]interface{}{
+					"template_id":        "74",
+					"name":               "T",
+					"subject":            "S",
+					"template_content":   `<p>old body</p>`,
+					"is_plain_text_mode": false,
+				},
+			},
+		},
+	})
+
+	err := runMountedMailShortcut(t, MailTemplateUpdate, []string{
+		"+template-update",
+		"--template-id", "74",
+		"--set-template-content", `<p><img src="cid:missing"></p>`,
+	}, f, stdout)
+	if err == nil || !strings.Contains(err.Error(), "missing inline cid") {
+		t.Fatalf("expected latest-body missing cid validation error, got %v", err)
+	}
+}
+
+func TestMailTemplateUpdate_RejectsDuplicateInlineCIDsAfterMerge(t *testing.T) {
+	chdirTemp(t)
+	if err := os.WriteFile("logo.png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/templates/75",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"template": map[string]interface{}{
+					"template_id":        "75",
+					"name":               "T",
+					"subject":            "S",
+					"template_content":   `<p><img src="cid:hero"></p>`,
+					"is_plain_text_mode": false,
+					"attachments": []interface{}{
+						map[string]interface{}{"id": "existing_logo", "filename": "old.png", "is_inline": true, "cid": "hero", "attachment_type": 1},
+					},
+				},
+			},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    "/open-apis/drive/v1/medias/upload_all",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"file_token": "new_logo"},
+		},
+	})
+
+	err := runMountedMailShortcut(t, MailTemplateUpdate, []string{
+		"+template-update",
+		"--template-id", "75",
+		"--inline", `{"cid":"hero","file_path":"logo.png"}`,
+	}, f, stdout)
+	if err == nil || !strings.Contains(err.Error(), "duplicated") {
+		t.Fatalf("expected duplicate cid validation error, got %v", err)
+	}
 }
 
 // TestMailTemplateUpdate_ValidateErrors verifies Validate-layer errors fire

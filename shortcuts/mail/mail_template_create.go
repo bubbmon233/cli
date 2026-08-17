@@ -136,6 +136,9 @@ var MailTemplateCreate = common.Shortcut{
 		}
 
 		content = wrapTemplateContentIfNeeded(content, isPlainText)
+		if err := validateInlineCIDs(content, inlineSpecCIDs(inlineSpecs), nil); err != nil {
+			return err
+		}
 		if int64(len(content)) > maxTemplateContentBytes {
 			return mailFailedPreconditionError("template content exceeds %d MB (got %.1f MB)",
 				maxTemplateContentBytes/(1024*1024),
@@ -148,6 +151,9 @@ var MailTemplateCreate = common.Shortcut{
 			inlineSpecs,
 		)
 		if err != nil {
+			return err
+		}
+		if err := validateTemplateInlinePayload(rewritten, atts); err != nil {
 			return err
 		}
 		inlineCount, largeCount := countAttachmentsByType(atts)
