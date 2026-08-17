@@ -519,6 +519,39 @@ func templateInlineCIDsFromAttachments(atts []templateAttachment) []string {
 	return cids
 }
 
+func templateAttachmentsForFinalContent(content string, atts []templateAttachment, pruneInlineOrphans bool) []templateAttachment {
+	if !pruneInlineOrphans {
+		return atts
+	}
+	kept := make([]templateAttachment, 0, len(atts))
+	for _, a := range atts {
+		cid := normalizeInlineCID(a.CID)
+		if a.IsInline && cid != "" && len(draftpkg.FindOrphanedCIDs(content, []string{cid})) > 0 {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	return kept
+}
+
+func validateTemplateInlinePlan(content string, existing []templateAttachment, specs []InlineSpec) ([]templateAttachment, error) {
+	candidates := append([]templateAttachment{}, existing...)
+	for _, spec := range specs {
+		candidates = append(candidates, templateAttachment{
+			Filename: filepath.Base(spec.FilePath),
+			CID:      normalizeInlineCID(spec.CID),
+			IsInline: true,
+		})
+	}
+	if err := validateUniqueTemplateInlineCIDs(candidates); err != nil {
+		return nil, err
+	}
+	if err := validateInlineCIDs(content, inlineSpecCIDs(specs), templateInlineCIDsFromAttachments(existing)); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
 func inlineSpecCIDs(specs []InlineSpec) []string {
 	if len(specs) == 0 {
 		return nil

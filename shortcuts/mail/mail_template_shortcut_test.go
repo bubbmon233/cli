@@ -65,7 +65,7 @@ func TestMailTemplateCreate_Happy(t *testing.T) {
 		"--name", "Quarterly",
 		"--subject", "Q4",
 		"--template-content", "<p>hi</p>",
-		"--to", "alice@example.com",
+		"--to", "测试用户 <alice@example.com>",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("template-create failed: %v", err)
@@ -84,6 +84,17 @@ func TestMailTemplateCreate_Happy(t *testing.T) {
 	}
 	if tplWrap["template_content"] != "<p>hi</p>" {
 		t.Errorf("template_content unexpectedly wrapped: %v", tplWrap["template_content"])
+	}
+	tos, ok := tplWrap["tos"].([]interface{})
+	if !ok || len(tos) != 1 {
+		t.Fatalf("tos = %#v, want one recipient", tplWrap["tos"])
+	}
+	to := tos[0].(map[string]interface{})
+	if to["name"] != "测试用户" {
+		t.Fatalf("template recipient name = %v, want raw unicode display name", to["name"])
+	}
+	if s, _ := to["name"].(string); strings.Contains(s, "=?UTF-8?") {
+		t.Fatalf("template recipient name must not be RFC2047 encoded: %q", s)
 	}
 
 	data := decodeShortcutEnvelopeData(t, stdout)
@@ -577,6 +588,7 @@ func TestMailTemplateCreate_ValidatesInlineCIDs(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "missing inline cid") {
 			t.Fatalf("expected missing cid validation error, got %v", err)
 		}
+		assertInlineValidationError(t, err)
 	})
 
 	t.Run("orphaned inline flag", func(t *testing.T) {
@@ -594,6 +606,7 @@ func TestMailTemplateCreate_ValidatesInlineCIDs(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "orphan") {
 			t.Fatalf("expected orphaned inline validation error, got %v", err)
 		}
+		assertInlineValidationError(t, err)
 	})
 }
 
@@ -1470,15 +1483,6 @@ func TestMailTemplateUpdate_RejectsDuplicateInlineCIDsAfterMerge(t *testing.T) {
 			},
 		},
 	})
-	reg.Register(&httpmock.Stub{
-		Method: "POST",
-		URL:    "/open-apis/drive/v1/medias/upload_all",
-		Body: map[string]interface{}{
-			"code": 0,
-			"data": map[string]interface{}{"file_token": "new_logo"},
-		},
-	})
-
 	err := runMountedMailShortcut(t, MailTemplateUpdate, []string{
 		"+template-update",
 		"--template-id", "75",
@@ -1487,6 +1491,7 @@ func TestMailTemplateUpdate_RejectsDuplicateInlineCIDsAfterMerge(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "duplicated") {
 		t.Fatalf("expected duplicate cid validation error, got %v", err)
 	}
+	assertInlineValidationError(t, err)
 }
 
 // TestMailTemplateUpdate_ValidateErrors verifies Validate-layer errors fire

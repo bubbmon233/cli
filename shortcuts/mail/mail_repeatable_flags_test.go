@@ -19,6 +19,7 @@ import (
 func TestNormalizeRepeatedRecipientFlagsPreservesDisplayNameCommas(t *testing.T) {
 	got := normalizeRecipientFlagValues([]string{
 		`Doe, Jane <jane@example.com>`,
+		`ACME, Inc., Billing <billing@example.com>`,
 		`"Roe, Richard" <richard@example.com>`,
 		`alice@example.com,bob@example.com`,
 	})
@@ -26,18 +27,32 @@ func TestNormalizeRepeatedRecipientFlagsPreservesDisplayNameCommas(t *testing.T)
 	if !strings.Contains(got, `"Doe, Jane" <jane@example.com>`) {
 		t.Fatalf("normalized recipients should quote display-name comma, got %q", got)
 	}
+	if strings.Contains(got, "ACME, ") && !strings.Contains(got, `"ACME, Inc., Billing" <billing@example.com>`) {
+		t.Fatalf("complete mailbox occurrence should not be split into an ACME recipient, got %q", got)
+	}
 	boxes := ParseMailboxList(got)
-	if len(boxes) != 4 {
-		t.Fatalf("recipient count = %d, want 4; normalized=%q", len(boxes), got)
+	if len(boxes) != 5 {
+		t.Fatalf("recipient count = %d, want 5; normalized=%q", len(boxes), got)
 	}
 	want := []Mailbox{
 		{Name: "Doe, Jane", Email: "jane@example.com"},
+		{Name: "ACME, Inc., Billing", Email: "billing@example.com"},
 		{Name: "Roe, Richard", Email: "richard@example.com"},
 		{Email: "alice@example.com"},
 		{Email: "bob@example.com"},
 	}
 	if !reflect.DeepEqual(boxes, want) {
 		t.Fatalf("recipients = %#v, want %#v; normalized=%q", boxes, want, got)
+	}
+}
+
+func TestNormalizeRecipientFlagsPreservesUnicodeDisplayNameSemantics(t *testing.T) {
+	got := normalizeRecipientFlagValues([]string{`测试用户 <unicode@example.com>`})
+	if strings.Contains(got, "=?UTF-8?") {
+		t.Fatalf("normalization must not RFC2047-encode display names, got %q", got)
+	}
+	if got != `测试用户 <unicode@example.com>` {
+		t.Fatalf("normalized recipient = %q, want raw display-name semantics", got)
 	}
 }
 

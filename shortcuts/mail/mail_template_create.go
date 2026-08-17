@@ -136,7 +136,7 @@ var MailTemplateCreate = common.Shortcut{
 		}
 
 		content = wrapTemplateContentIfNeeded(content, isPlainText)
-		if err := validateInlineCIDs(content, inlineSpecCIDs(inlineSpecs), nil); err != nil {
+		if _, err := validateTemplateInlinePlan(content, nil, inlineSpecs); err != nil {
 			return err
 		}
 		if int64(len(content)) > maxTemplateContentBytes {

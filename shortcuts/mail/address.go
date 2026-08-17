@@ -61,11 +61,25 @@ func (m Mailbox) String() string {
 	return formatDisplayName(m.Name) + " <" + m.Email + ">"
 }
 
+// rawString formats a mailbox for intermediate CLI normalization. It preserves
+// the original display-name text; RFC 2047 encoding belongs to final header
+// rendering in String().
+func (m Mailbox) rawString() string {
+	if m.Name == "" {
+		return m.Email
+	}
+	return quoteDisplayNameIfNeeded(m.Name) + " <" + m.Email + ">"
+}
+
 func formatDisplayName(name string) string {
 	encoded := encodeHeader(name)
 	if encoded != name {
 		return encoded
 	}
+	return quoteDisplayNameIfNeeded(name)
+}
+
+func quoteDisplayNameIfNeeded(name string) string {
 	if !strings.ContainsAny(name, "\",;<>@()[]:\\") {
 		return name
 	}
