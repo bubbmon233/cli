@@ -255,6 +255,87 @@ func TestMailRuleUpdateNamePreservesCollectionsAndOutputsDiff(t *testing.T) {
 	}
 }
 
+func TestMailRuleUpdateReplacesActionsAndPreservesConditions(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	currentRule := map[string]interface{}{
+		"rule_id":                  "rule_1",
+		"name":                     "Old Name",
+		"is_enable":                true,
+		"ignore_the_rest_of_rules": false,
+		"condition": map[string]interface{}{
+			"match_type": 1,
+			"items": []interface{}{
+				map[string]interface{}{"type": 6, "operator": 1, "input": "Alpha"},
+			},
+		},
+		"action": map[string]interface{}{
+			"items": []interface{}{
+				map[string]interface{}{"type": 11, "folder_id": "fld_old"},
+			},
+		},
+	}
+	updatedRule := map[string]interface{}{}
+	for k, v := range currentRule {
+		updatedRule[k] = v
+	}
+	updatedRule["action"] = map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{"type": 3},
+			map[string]interface{}{"type": 9},
+		},
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "open-apis/mail/v1/user_mailboxes/me/rules",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"rules": []interface{}{currentRule},
+			},
+		},
+	})
+	putStub := &httpmock.Stub{
+		Method: "PUT",
+		URL:    "open-apis/mail/v1/user_mailboxes/me/rules/rule_1",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"rule": updatedRule,
+			},
+		},
+	}
+	reg.Register(putStub)
+
+	if err := runMountedMailShortcut(t, MailRuleUpdate, []string{
+		"+rule-update",
+		"--rule-id", "rule_1",
+		"--action", "mark_read",
+		"--action", "star",
+		"--format", "json",
+	}, f, stdout); err != nil {
+		t.Fatalf("run +rule-update --action error = %v", err)
+	}
+	reg.Verify(t)
+
+	var putBody map[string]interface{}
+	if err := json.Unmarshal(putStub.CapturedBody, &putBody); err != nil {
+		t.Fatalf("unmarshal PUT body: %v", err)
+	}
+	assertJSONEqual(t, putBody["condition"], currentRule["condition"], "condition")
+	action := putBody["action"].(map[string]interface{})
+	items := action["items"].([]interface{})
+	if len(items) != 2 {
+		t.Fatalf("action items = %#v, want two replacements", items)
+	}
+	if got := items[0].(map[string]interface{})["type"]; got != float64(3) {
+		t.Fatalf("first action type = %v, want 3", got)
+	}
+	if got := items[1].(map[string]interface{})["type"]; got != float64(9) {
+		t.Fatalf("second action type = %v, want 9", got)
+	}
+}
+
 func assertJSONEqual(t *testing.T, got, want interface{}, label string) {
 	t.Helper()
 	gotJSON, err := json.Marshal(got)
