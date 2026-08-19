@@ -111,7 +111,7 @@ func TestBuildRawEMLForDraftCreate_UnicodeRecipientDisplayNameEncodedOnlyAtHeade
 		Body:    `<p>Hello</p>`,
 	}
 
-	rawEML, _, _, err := buildRawEMLForDraftCreate(context.Background(), newRuntimeWithFrom("sender@example.com"), input, nil, "", nil, "", "", nil, nil, "")
+	rawEML, _, _, err := buildRawEMLForDraftCreate(context.Background(), newRuntimeWithFrom("sender@example.com"), input, nil, "", nil, "", "", nil, nil, composeSenderInfo{})
 	if err != nil {
 		t.Fatalf("buildRawEMLForDraftCreate() error = %v", err)
 	}
