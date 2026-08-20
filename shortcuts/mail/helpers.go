@@ -2286,64 +2286,11 @@ type InlineSpec struct {
 func normalizeRecipientFlagValues(values []string) string {
 	var parts []string
 	for _, raw := range values {
-		for _, part := range splitRecipientFlagValue(raw) {
-			m := ParseMailbox(part)
-			if m.Email == "" {
-				continue
-			}
+		for _, m := range ParseMailboxList(raw) {
 			parts = append(parts, m.rawString())
 		}
 	}
 	return strings.Join(parts, ", ")
-}
-
-func splitRecipientFlagValue(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	if isCompleteAngleMailbox(raw) {
-		return []string{raw}
-	}
-	parts := splitAddressList(raw)
-	if len(parts) <= 1 {
-		return parts
-	}
-	out := make([]string, 0, len(parts))
-	for i := 0; i < len(parts); i++ {
-		part := parts[i]
-		if !strings.Contains(part, "@") && i+1 < len(parts) && strings.Contains(parts[i+1], "<") {
-			coalesced := part
-			for i+1 < len(parts) && !hasCompleteAngleAddress(coalesced) {
-				i++
-				coalesced += ", " + parts[i]
-			}
-			out = append(out, strings.TrimSpace(coalesced))
-			continue
-		}
-		out = append(out, part)
-	}
-	return out
-}
-
-func isCompleteAngleMailbox(raw string) bool {
-	lt := strings.LastIndex(raw, "<")
-	if lt < 0 {
-		return false
-	}
-	gt := strings.Index(raw[lt:], ">")
-	if gt < 0 {
-		return false
-	}
-	if strings.TrimSpace(raw[lt+gt+1:]) != "" {
-		return false
-	}
-	return strings.Contains(raw[lt+1:lt+gt], "@")
-}
-
-func hasCompleteAngleAddress(raw string) bool {
-	lt := strings.LastIndex(raw, "<")
-	return lt >= 0 && strings.Contains(raw[lt:], ">")
 }
 
 func normalizeCommaListFlagValues(values []string) []string {

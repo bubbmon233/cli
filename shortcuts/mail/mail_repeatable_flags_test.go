@@ -18,26 +18,25 @@ import (
 
 func TestNormalizeRepeatedRecipientFlagsPreservesDisplayNameCommas(t *testing.T) {
 	got := normalizeRecipientFlagValues([]string{
-		`Doe, Jane <jane@example.com>`,
-		`ACME, Inc., Billing <billing@example.com>`,
-		`"Roe, Richard" <richard@example.com>`,
+		`a@x,b@y`,
+		`Alice <alice@example.com>, Bob <bob@example.com>`,
+		`"ACME, Inc." <billing@example.com>`,
 		`alice@example.com,bob@example.com`,
 	})
 
-	if !strings.Contains(got, `"Doe, Jane" <jane@example.com>`) {
-		t.Fatalf("normalized recipients should quote display-name comma, got %q", got)
-	}
-	if strings.Contains(got, "ACME, ") && !strings.Contains(got, `"ACME, Inc., Billing" <billing@example.com>`) {
-		t.Fatalf("complete mailbox occurrence should not be split into an ACME recipient, got %q", got)
+	if !strings.Contains(got, `"ACME, Inc." <billing@example.com>`) {
+		t.Fatalf("quoted display-name comma should stay one recipient, got %q", got)
 	}
 	boxes := ParseMailboxList(got)
-	if len(boxes) != 5 {
-		t.Fatalf("recipient count = %d, want 5; normalized=%q", len(boxes), got)
+	if len(boxes) != 7 {
+		t.Fatalf("recipient count = %d, want 7; normalized=%q", len(boxes), got)
 	}
 	want := []Mailbox{
-		{Name: "Doe, Jane", Email: "jane@example.com"},
-		{Name: "ACME, Inc., Billing", Email: "billing@example.com"},
-		{Name: "Roe, Richard", Email: "richard@example.com"},
+		{Email: "a@x"},
+		{Email: "b@y"},
+		{Name: "Alice", Email: "alice@example.com"},
+		{Name: "Bob", Email: "bob@example.com"},
+		{Name: "ACME, Inc.", Email: "billing@example.com"},
 		{Email: "alice@example.com"},
 		{Email: "bob@example.com"},
 	}
