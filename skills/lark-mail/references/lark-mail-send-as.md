@@ -9,6 +9,7 @@
 - `--mailbox` 指定邮件归属邮箱（如 `shared@example.com` 或 `me`），可通过 `accessible_mailboxes` 查询可用值。
 - `--from` 指定 EML From 头里的发件人地址（别名、邮件组等），可通过 `send_as` 查询可用值。
 - 省略 `--from` 时，`+send` / `+draft-create` 会读取 `send_as` 中的默认发信地址；旧服务端无默认标记或接口失败时回退到第一项/主地址。
+- `+reply` / `+reply-all` / `+forward` / `+send-receipt` 省略 `--from` 时，先从原邮件 To/Cc 中匹配属于我的可发信地址，再使用默认发信地址；读不到默认地址或 `send_as` 失败时保持原有 sender 逻辑，不把第一项伪装成默认地址。
 
 ## 查询可用邮箱和发信地址
 

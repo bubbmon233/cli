@@ -189,6 +189,12 @@ func resolveSenderInfo(runtime *common.RuntimeContext, mailboxID, fromEmail stri
 		return "", ""
 	}
 	sender := pickSendAsAddress(addrs, fromEmail)
+	if sender.Email == "" && strings.TrimSpace(fromEmail) != "" {
+		return "", strings.TrimSpace(fromEmail)
+	}
+	if sender.Email == "" {
+		sender = pickFirstSendAsAddress(addrs)
+	}
 	return sender.Name, sender.Email
 }
 
