@@ -358,8 +358,9 @@ type composeSenderInfo struct {
 	Email string
 }
 
-// resolveComposeSenderEmail determines the sender email for compose shortcuts.
-// Priority: --from > default send_as > --mailbox > profile("me").
+// resolveComposeSenderEmail determines the sender email for new compose
+// shortcuts. Priority: --from > default send_as > legacy first send_as >
+// --mailbox > profile("me").
 func resolveComposeSenderEmail(runtime *common.RuntimeContext) string {
 	return resolveComposeSenderInfo(runtime, resolveComposeMailboxID(runtime)).Email
 }
@@ -368,9 +369,37 @@ func resolveComposeSenderInfo(runtime *common.RuntimeContext, mailboxID string) 
 	if from := strings.TrimSpace(runtime.Str("from")); from != "" {
 		return composeSenderInfo{Email: from}
 	}
-	if sender, ok := resolveDefaultSendAs(runtime, mailboxID); ok {
-		return sender
+	if addrs, ok := fetchSendAsAddresses(runtime, mailboxID); ok {
+		if sender := pickSendAsAddress(addrs, ""); sender.Email != "" {
+			return sender
+		}
+		if sender := pickFirstSendAsAddress(addrs); sender.Email != "" {
+			return sender
+		}
 	}
+	return resolveLegacyComposeSenderInfo(runtime)
+}
+
+// resolveReplySenderInfo determines the sender for reply-like shortcuts
+// (+reply / +reply-all / +forward / +send-receipt). Unlike new compose, old
+// send_as responses without is_default must not make the first address look
+// like a deliberate reply identity.
+func resolveReplySenderInfo(runtime *common.RuntimeContext, mailboxID string, orig originalMessage) composeSenderInfo {
+	if from := strings.TrimSpace(runtime.Str("from")); from != "" {
+		return composeSenderInfo{Email: from}
+	}
+	if addrs, ok := fetchSendAsAddresses(runtime, mailboxID); ok {
+		if sender := pickMyAddressFromOriginalMessage(addrs, orig.toAddressesFull, orig.ccAddressesFull); sender.Email != "" {
+			return sender
+		}
+		if sender := pickSendAsAddress(addrs, ""); sender.Email != "" {
+			return sender
+		}
+	}
+	return resolveLegacyComposeSenderInfo(runtime)
+}
+
+func resolveLegacyComposeSenderInfo(runtime *common.RuntimeContext) composeSenderInfo {
 	if mb := strings.TrimSpace(runtime.Str("mailbox")); mb != "" && mb != "me" {
 		return composeSenderInfo{Email: mb}
 	}
@@ -379,12 +408,21 @@ func resolveComposeSenderInfo(runtime *common.RuntimeContext, mailboxID string) 
 }
 
 func resolveDefaultSendAs(runtime *common.RuntimeContext, mailboxID string) (composeSenderInfo, bool) {
-	if runtime == nil || runtime.Factory == nil {
+	addrs, ok := fetchSendAsAddresses(runtime, mailboxID)
+	if !ok {
 		return composeSenderInfo{}, false
+	}
+	sender := pickSendAsAddress(addrs, "")
+	return sender, sender.Email != ""
+}
+
+func fetchSendAsAddresses(runtime *common.RuntimeContext, mailboxID string) ([]interface{}, bool) {
+	if runtime == nil || runtime.Factory == nil {
+		return nil, false
 	}
 	data, err := runtime.CallAPITyped("GET", mailboxPath(mailboxID, "settings", "send_as"), nil, nil)
 	if err != nil {
-		return composeSenderInfo{}, false
+		return nil, false
 	}
 	addrs, ok := data["sendable_addresses"].([]interface{})
 	if !ok {
@@ -393,14 +431,12 @@ func resolveDefaultSendAs(runtime *common.RuntimeContext, mailboxID string) (com
 		}
 	}
 	if !ok || len(addrs) == 0 {
-		return composeSenderInfo{}, false
+		return nil, false
 	}
-	sender := pickSendAsAddress(addrs, "")
-	return sender, sender.Email != ""
+	return addrs, true
 }
 
 func pickSendAsAddress(addrs []interface{}, fromEmail string) composeSenderInfo {
-	var first composeSenderInfo
 	for _, raw := range addrs {
 		m, ok := raw.(map[string]interface{})
 		if !ok {
@@ -414,9 +450,6 @@ func pickSendAsAddress(addrs []interface{}, fromEmail string) composeSenderInfo 
 			Name:  strings.TrimSpace(asString(m["name"])),
 			Email: email,
 		}
-		if first.Email == "" {
-			first = sender
-		}
 		if strings.TrimSpace(fromEmail) != "" && strings.EqualFold(email, strings.TrimSpace(fromEmail)) {
 			return sender
 		}
@@ -424,7 +457,56 @@ func pickSendAsAddress(addrs []interface{}, fromEmail string) composeSenderInfo 
 			return sender
 		}
 	}
-	return first
+	return composeSenderInfo{}
+}
+
+func pickFirstSendAsAddress(addrs []interface{}) composeSenderInfo {
+	for _, raw := range addrs {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		email := strings.TrimSpace(asString(m["email_address"]))
+		if email == "" {
+			continue
+		}
+		return composeSenderInfo{
+			Name:  strings.TrimSpace(asString(m["name"])),
+			Email: email,
+		}
+	}
+	return composeSenderInfo{}
+}
+
+func pickMyAddressFromOriginalMessage(addrs []interface{}, originalTo, originalCc []mailAddressPair) composeSenderInfo {
+	sendable := make(map[string]composeSenderInfo, len(addrs))
+	for _, raw := range addrs {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		email := strings.TrimSpace(asString(m["email_address"]))
+		if email == "" {
+			continue
+		}
+		sendable[strings.ToLower(email)] = composeSenderInfo{
+			Name:  strings.TrimSpace(asString(m["name"])),
+			Email: email,
+		}
+	}
+	for _, group := range [][]mailAddressPair{originalTo, originalCc} {
+		for _, recipient := range group {
+			sender, ok := sendable[strings.ToLower(strings.TrimSpace(recipient.Email))]
+			if !ok {
+				continue
+			}
+			if sender.Name == "" {
+				sender.Name = strings.TrimSpace(recipient.Name)
+			}
+			return sender
+		}
+	}
+	return composeSenderInfo{}
 }
 
 func asString(v interface{}) string {

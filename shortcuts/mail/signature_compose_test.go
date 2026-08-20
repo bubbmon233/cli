@@ -248,14 +248,52 @@ func TestPickSendAsAddressDefaultWinsWhenFromEmpty(t *testing.T) {
 	}
 }
 
-func TestPickSendAsAddressFallsBackToFirstForOldResponse(t *testing.T) {
+func TestPickSendAsAddressReturnsEmptyForOldResponse(t *testing.T) {
 	addrs := []interface{}{
 		map[string]interface{}{"email_address": "first@example.com", "name": "First"},
 		map[string]interface{}{"email_address": "second@example.com", "name": "Second"},
 	}
 	got := pickSendAsAddress(addrs, "")
+	if got.Email != "" || got.Name != "" {
+		t.Fatalf("pickSendAsAddress old response = %+v, want empty", got)
+	}
+}
+
+func TestPickFirstSendAsAddressKeepsComposeLegacyFallback(t *testing.T) {
+	addrs := []interface{}{
+		map[string]interface{}{"email_address": "first@example.com", "name": "First"},
+		map[string]interface{}{"email_address": "second@example.com", "name": "Second"},
+	}
+	got := pickFirstSendAsAddress(addrs)
 	if got.Email != "first@example.com" || got.Name != "First" {
-		t.Fatalf("pickSendAsAddress old response = %+v, want first", got)
+		t.Fatalf("pickFirstSendAsAddress = %+v, want first", got)
+	}
+}
+
+func TestPickMyAddressFromOriginalMessagePrefersToBeforeCc(t *testing.T) {
+	addrs := []interface{}{
+		map[string]interface{}{"email_address": "cc-alias@example.com", "name": "CC Alias"},
+		map[string]interface{}{"email_address": "to-alias@example.com", "name": "To Alias"},
+	}
+	got := pickMyAddressFromOriginalMessage(addrs,
+		[]mailAddressPair{{Email: "TO-ALIAS@example.com", Name: "Recipient To"}},
+		[]mailAddressPair{{Email: "cc-alias@example.com", Name: "Recipient Cc"}},
+	)
+	if got.Email != "to-alias@example.com" || got.Name != "To Alias" {
+		t.Fatalf("pickMyAddressFromOriginalMessage = %+v, want To Alias", got)
+	}
+}
+
+func TestPickMyAddressFromOriginalMessageUsesRecipientNameWhenSendAsNameMissing(t *testing.T) {
+	addrs := []interface{}{
+		map[string]interface{}{"email_address": "alias@example.com"},
+	}
+	got := pickMyAddressFromOriginalMessage(addrs,
+		nil,
+		[]mailAddressPair{{Email: "alias@example.com", Name: "Recipient Alias"}},
+	)
+	if got.Email != "alias@example.com" || got.Name != "Recipient Alias" {
+		t.Fatalf("pickMyAddressFromOriginalMessage = %+v, want recipient name fallback", got)
 	}
 }
 
