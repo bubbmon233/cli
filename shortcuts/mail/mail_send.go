@@ -215,13 +215,13 @@ var MailSend = common.Shortcut{
 			Subject(subject).
 			ToAddrs(parseNetAddrs(to))
 		if senderEmail != "" {
-			bld = bld.From("", senderEmail)
+			bld = bld.From(senderInfo.Name, senderEmail)
 		}
 		if err := requireSenderForRequestReceipt(runtime, senderEmail); err != nil {
 			return err
 		}
 		if runtime.Bool("request-receipt") {
-			bld = bld.DispositionNotificationTo("", senderEmail)
+			bld = bld.DispositionNotificationTo(senderInfo.Name, senderEmail)
 		}
 		if ccFlag != "" {
 			bld = bld.CCAddrs(parseNetAddrs(ccFlag))

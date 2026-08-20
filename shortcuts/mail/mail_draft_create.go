@@ -198,7 +198,7 @@ var MailDraftCreate = common.Shortcut{
 			return err
 		}
 		rawEML, lintApplied, lintBlocked, err := buildRawEMLForDraftCreate(ctx, runtime, input, sigResult, priority,
-			templateLargeAttachmentIDs, mailboxID, templateID, templateInlineAttachments, templateSmallAttachments, senderEmail)
+			templateLargeAttachmentIDs, mailboxID, templateID, templateInlineAttachments, templateSmallAttachments, senderInfo)
 		if err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func buildRawEMLForDraftCreate(
 	mailboxID, templateID string,
 	templateInlineAttachments []templateInlineRef,
 	templateSmallAttachments []templateAttachmentRef,
-	senderEmailHint string,
+	senderInfoHint composeSenderInfo,
 ) (rawEMLOut string, lintApplied, lintBlocked []lint.Finding, err error) {
 	// Initialise lint findings as empty (non-nil) slices so callers can
 	// surface them through the envelope unconditionally even on the
@@ -263,10 +263,11 @@ func buildRawEMLForDraftCreate(
 
 	// Use the pre-resolved senderEmail when available (avoids a duplicate
 	// profile API call when Execute already fetched it for auto-resolve).
-	senderEmail := senderEmailHint
-	if senderEmail == "" {
-		senderEmail = resolveComposeSenderEmail(runtime)
+	senderInfo := senderInfoHint
+	if senderInfo.Email == "" {
+		senderInfo = resolveComposeSenderInfo(runtime, resolveComposeMailboxID(runtime))
 	}
+	senderEmail := senderInfo.Email
 	if senderEmail == "" {
 		return "", lintApplied, lintBlocked, mailValidationParamError("--from", "unable to determine sender email; please specify --from explicitly")
 	}
@@ -282,7 +283,7 @@ func buildRawEMLForDraftCreate(
 		bld = bld.ToAddrs(parseNetAddrs(input.To))
 	}
 	if senderEmail != "" {
-		bld = bld.From("", senderEmail)
+		bld = bld.From(senderInfo.Name, senderEmail)
 	}
 	// senderEmail non-emptiness is already enforced above (L140); the flag-
 	// driven guard here only exists to make the relationship explicit to
@@ -293,7 +294,7 @@ func buildRawEMLForDraftCreate(
 		return "", lintApplied, lintBlocked, err
 	}
 	if runtime.Bool("request-receipt") {
-		bld = bld.DispositionNotificationTo("", senderEmail)
+		bld = bld.DispositionNotificationTo(senderInfo.Name, senderEmail)
 	}
 	if input.CC != "" {
 		bld = bld.CCAddrs(parseNetAddrs(input.CC))
