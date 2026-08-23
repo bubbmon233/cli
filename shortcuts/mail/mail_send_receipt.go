@@ -86,13 +86,13 @@ var MailSendReceipt = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "message-id", Desc: "Required. Message ID of the incoming mail that requested a read receipt.", Required: true},
 		{Name: "mailbox", Desc: "Mailbox email address that owns the receipt reply (default: me)."},
-		{Name: "from", Desc: "Sender email address for the From header. Defaults to a send_as address that matches the original To/Cc, then the mailbox default send_as address."},
+		{Name: "from", Desc: "Sender email address for the From header. Defaults to --mailbox when it is not me, then a send_as address that matches the original To/Cc, then the mailbox default send_as address."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		messageID := runtime.Str("message-id")
 		mailboxID := resolveComposeMailboxID(runtime)
 		return common.NewDryRunAPI().
-			Desc("Send read receipt: fetch the original message → verify the READ_RECEIPT_REQUEST label is present → resolve sender from original recipients or default send_as → build a reply with subject \"已读回执：<original>\" (zh) or \"Read receipt: <original>\" (en) picked by CJK detection on the original subject, In-Reply-To / References threading, and X-Lark-Read-Receipt-Mail: 1 → create draft and send. The backend extracts the private header, sets BodyExtra.IsReadReceiptMail, and DraftSend applies the READ_RECEIPT_SENT label to the outgoing message.").
+			Desc("Send read receipt: fetch the original message → verify the READ_RECEIPT_REQUEST label is present → resolve sender from --mailbox, original recipients, or default send_as → build a reply with subject \"已读回执：<original>\" (zh) or \"Read receipt: <original>\" (en) picked by CJK detection on the original subject, In-Reply-To / References threading, and X-Lark-Read-Receipt-Mail: 1 → create draft and send. The backend extracts the private header, sets BodyExtra.IsReadReceiptMail, and DraftSend applies the READ_RECEIPT_SENT label to the outgoing message.").
 			GET(mailboxPath(mailboxID, "messages", messageID)).
 			Params(map[string]interface{}{"format": messageGetFormat(false)}).
 			GET(mailboxPath(mailboxID, "settings", "send_as")).
