@@ -99,12 +99,9 @@ func shellQuoteForHint(s string) string {
 // believing a receipt was requested when it wasn't. Intended to be called
 // from a shortcut's Execute right after the sender address has been resolved.
 //
-// The error wording is deliberately generic about recovery: compose shortcuts
-// (+send, +reply, +reply-all, +forward, +draft-create) can accept --from to
-// set the sender, but +draft-edit's --from names the mailbox that owns the
-// draft, not the DNT address — for that case the recovery is to make sure
-// the draft already has a valid From header. Pointing at --from unconditionally
-// would send +draft-edit users to the wrong flag.
+// The error wording is deliberately generic about recovery because some
+// shortcuts infer a sender from mailbox settings, while draft-edit may depend
+// on the existing draft's From header unless --from is explicitly supplied.
 func requireSenderForRequestReceipt(runtime *common.RuntimeContext, senderEmail string) error {
 	if !runtime.Bool("request-receipt") {
 		return nil
