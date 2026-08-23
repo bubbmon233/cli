@@ -552,6 +552,57 @@ func validateTemplateInlinePlan(content string, existing []templateAttachment, s
 	return existing, nil
 }
 
+func validateTemplateInlineUpdate(content string, existing []templateAttachment, specs []InlineSpec, contentChanged bool) error {
+	if !contentChanged && len(specs) == 0 {
+		return nil
+	}
+	if contentChanged {
+		if err := validateUniqueTemplateInlineCIDs(existing); err != nil {
+			return err
+		}
+	}
+	if len(specs) > 0 {
+		if err := validateNewTemplateInlineCIDs(existing, specs); err != nil {
+			return err
+		}
+	}
+	return validateInlineCIDs(content, inlineSpecCIDs(specs), templateInlineCIDsFromAttachments(existing))
+}
+
+func validateNewTemplateInlineCIDs(existing []templateAttachment, specs []InlineSpec) error {
+	existingCIDs := make(map[string]string, len(existing))
+	for _, a := range existing {
+		if !a.IsInline {
+			continue
+		}
+		cid := normalizeInlineCID(a.CID)
+		if cid == "" {
+			continue
+		}
+		key := strings.ToLower(cid)
+		if _, ok := existingCIDs[key]; !ok {
+			existingCIDs[key] = a.Filename
+		}
+	}
+	seenSpecs := make(map[string]string, len(specs))
+	for _, spec := range specs {
+		cid := normalizeInlineCID(spec.CID)
+		if cid == "" {
+			continue
+		}
+		key := strings.ToLower(cid)
+		filename := filepath.Base(spec.FilePath)
+		if prev, ok := seenSpecs[key]; ok {
+			return mailValidationParamError("--inline", "template inline cid %q is duplicated by attachments %q and %q", cid, prev, filename)
+		}
+		if prev, ok := existingCIDs[key]; ok {
+			return mailValidationParamError("--inline", "template inline cid %q is duplicated by attachments %q and %q", cid, prev, filename)
+		}
+		seenSpecs[key] = filename
+	}
+	return nil
+}
+
 func inlineSpecCIDs(specs []InlineSpec) []string {
 	if len(specs) == 0 {
 		return nil

@@ -224,7 +224,7 @@ var MailTemplateUpdate = common.Shortcut{
 				float64(len(tpl.TemplateContent))/1024/1024)
 		}
 		retainedAttachments := templateAttachmentsForFinalContent(tpl.TemplateContent, tpl.Attachments, contentChanged)
-		if _, err := validateTemplateInlinePlan(tpl.TemplateContent, retainedAttachments, inlineSpecs); err != nil {
+		if err := validateTemplateInlineUpdate(tpl.TemplateContent, retainedAttachments, inlineSpecs, contentChanged); err != nil {
 			return err
 		}
 
@@ -270,10 +270,6 @@ var MailTemplateUpdate = common.Shortcut{
 				tpl.Attachments[i].Body = tpl.Attachments[i].ID
 			}
 		}
-		if err := validateTemplateInlinePayload(tpl.TemplateContent, tpl.Attachments); err != nil {
-			return err
-		}
-
 		inlineCount, largeCount := countAttachmentsByType(tpl.Attachments)
 		logTemplateInfo(runtime, "update.execute", map[string]interface{}{
 			"mailbox_id":         mailboxID,
