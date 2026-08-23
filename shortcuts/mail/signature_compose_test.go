@@ -231,9 +231,30 @@ func TestPickSendAsAddressExplicitFromWins(t *testing.T) {
 		map[string]interface{}{"email_address": "first@example.com", "name": "First", "is_default": true},
 		map[string]interface{}{"email_address": "alias@example.com", "name": "Alias"},
 	}
-	got := pickSendAsAddress(addrs, "ALIAS@example.com")
+	got := pickSendAsAddress(addrs, "ALIAS@example.com", "shared@example.com")
 	if got.Email != "alias@example.com" || got.Name != "Alias" {
 		t.Fatalf("pickSendAsAddress explicit from = %+v, want alias", got)
+	}
+}
+
+func TestPickSendAsAddressMailboxWinsBeforeDefault(t *testing.T) {
+	addrs := []interface{}{
+		map[string]interface{}{"email_address": "default@example.com", "name": "Default", "is_default": true},
+		map[string]interface{}{"email_address": "shared@example.com", "name": "Shared"},
+	}
+	got := pickSendAsAddress(addrs, "", "SHARED@example.com")
+	if got.Email != "shared@example.com" || got.Name != "Shared" {
+		t.Fatalf("pickSendAsAddress mailbox = %+v, want shared", got)
+	}
+}
+
+func TestPickSendAsAddressMailboxFallsBackToRawMailbox(t *testing.T) {
+	addrs := []interface{}{
+		map[string]interface{}{"email_address": "default@example.com", "name": "Default", "is_default": true},
+	}
+	got := pickSendAsAddress(addrs, "", "shared@example.com")
+	if got.Email != "shared@example.com" || got.Name != "" {
+		t.Fatalf("pickSendAsAddress unmatched mailbox = %+v, want raw mailbox email", got)
 	}
 }
 
@@ -242,7 +263,7 @@ func TestPickSendAsAddressDefaultWinsWhenFromEmpty(t *testing.T) {
 		map[string]interface{}{"email_address": "first@example.com", "name": "First"},
 		map[string]interface{}{"email_address": "default@example.com", "name": "Default", "is_default": true},
 	}
-	got := pickSendAsAddress(addrs, "")
+	got := pickSendAsAddress(addrs, "", "")
 	if got.Email != "default@example.com" || got.Name != "Default" {
 		t.Fatalf("pickSendAsAddress default = %+v, want default", got)
 	}
@@ -253,20 +274,20 @@ func TestPickSendAsAddressReturnsEmptyForOldResponse(t *testing.T) {
 		map[string]interface{}{"email_address": "first@example.com", "name": "First"},
 		map[string]interface{}{"email_address": "second@example.com", "name": "Second"},
 	}
-	got := pickSendAsAddress(addrs, "")
+	got := pickSendAsAddress(addrs, "", "")
 	if got.Email != "" || got.Name != "" {
 		t.Fatalf("pickSendAsAddress old response = %+v, want empty", got)
 	}
 }
 
-func TestPickFirstSendAsAddressKeepsComposeLegacyFallback(t *testing.T) {
+func TestPickSendAsAddressDoesNotFallbackToFirst(t *testing.T) {
 	addrs := []interface{}{
 		map[string]interface{}{"email_address": "first@example.com", "name": "First"},
 		map[string]interface{}{"email_address": "second@example.com", "name": "Second"},
 	}
-	got := pickFirstSendAsAddress(addrs)
-	if got.Email != "first@example.com" || got.Name != "First" {
-		t.Fatalf("pickFirstSendAsAddress = %+v, want first", got)
+	got := pickSendAsAddress(addrs, "", "")
+	if got.Email != "" || got.Name != "" {
+		t.Fatalf("pickSendAsAddress old response = %+v, want empty", got)
 	}
 }
 
