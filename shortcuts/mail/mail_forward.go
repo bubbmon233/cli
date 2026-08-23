@@ -32,8 +32,8 @@ var MailForward = common.Shortcut{
 		{Name: "to", Desc: "Recipient email address(es), comma-separated"},
 		{Name: "body", Desc: "Body prepended before the forwarded message. Prefer HTML for rich formatting; plain text is also supported. Body type is auto-detected from the forward body and the original message. Use --plain-text to force plain-text mode. Mutually exclusive with --body-file."},
 		bodyFileFlag,
-		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to a send_as address that matches the original To/Cc, then the mailbox default send_as address."},
-		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: falls back to --from, then me). Use this when the sender (--from) differs from the mailbox, e.g. sending via an alias or send_as address."},
+		{Name: "from", Desc: "Sender email address for the From header. When using an alias (send_as) address, set this to the alias and use --mailbox for the owning mailbox. Defaults to --mailbox when it is not me, then a send_as address that matches the original To/Cc, then the mailbox default send_as address."},
+		{Name: "mailbox", Desc: "Mailbox email address that owns the draft (default: me). When --from is omitted and this is not me, it is also used as the sender identity."},
 		{Name: "cc", Desc: "CC email address(es), comma-separated"},
 		{Name: "bcc", Desc: "BCC email address(es), comma-separated"},
 		{Name: "plain-text", Type: "bool", Desc: "Force plain-text mode, ignoring all HTML auto-detection. Cannot be used with --inline."},
@@ -54,9 +54,9 @@ var MailForward = common.Shortcut{
 		to := runtime.Str("to")
 		confirmSend := runtime.Bool("confirm-send")
 		mailboxID := resolveComposeMailboxID(runtime)
-		desc := "Forward: fetch original message → resolve sender from original recipients or default send_as → save as draft"
+		desc := "Forward: fetch original message → resolve sender from --mailbox, original recipients, or default send_as → save as draft"
 		if confirmSend {
-			desc = "Forward (--confirm-send): fetch original message → resolve sender from original recipients or default send_as → create draft → send draft"
+			desc = "Forward (--confirm-send): fetch original message → resolve sender from --mailbox, original recipients, or default send_as → create draft → send draft"
 		}
 		api := common.NewDryRunAPI().Desc(desc)
 		if tid := runtime.Str("template-id"); tid != "" {
