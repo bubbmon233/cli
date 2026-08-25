@@ -10,11 +10,13 @@
 > **默认草稿模式**：`+reply` 默认保存为草稿，不会立即发送。如需立即发送，使用 `--confirm-send` 参数（须经用户明确确认）。**优先使用 `+reply` 而不是 `+draft-create` 来创建回复草稿**，因为 `+reply` 会自动处理主题、收件人和会话头。
 
 本 skill 对应 shortcut：`lark-cli mail +reply`，内部步骤：
-1. `GET /open-apis/mail/v1/user_mailboxes/me/messages/{message_id}` — 获取原邮件元数据
-2. `GET /open-apis/mail/v1/user_mailboxes/me/settings/send_as` — 获取可用发件地址，按 `--from`、`--mailbox`、原邮件收件地址、默认发件地址选择 From
-3. `GET /open-apis/mail/v1/user_mailboxes/me/profile` — 获取主邮箱地址，作为最后兜底 From
-4. `POST /open-apis/mail/v1/user_mailboxes/me/drafts` — 创建草稿
-5. `POST /open-apis/mail/v1/user_mailboxes/me/drafts/{draft_id}/send` — 发送草稿（仅在指定 `--confirm-send` 时执行）
+1. `GET /open-apis/mail/v1/user_mailboxes/{mailbox}/messages/{message_id}` — 获取原邮件元数据
+2. `GET /open-apis/mail/v1/user_mailboxes/{mailbox}/settings/send_as` — 获取可用发件地址，按 `--from`、`--mailbox != me`、原邮件收件地址、默认发件地址选择 From
+3. `GET /open-apis/mail/v1/user_mailboxes/{mailbox}/profile` — 获取主邮箱地址，作为最后兜底 From
+4. `POST /open-apis/mail/v1/user_mailboxes/{mailbox}/drafts` — 创建草稿
+5. `POST /open-apis/mail/v1/user_mailboxes/{mailbox}/drafts/{draft_id}/send` — 发送草稿（仅在指定 `--confirm-send` 时执行）
+
+`{mailbox}` 为解析后的草稿所属邮箱，默认 `me`；如果创建回复时指定了 `--mailbox`，后续发送、取消定时发送、查询投递状态也使用同一个邮箱。
 
 ## CRITICAL — 发送工作流（必须遵循）
 
@@ -32,7 +34,7 @@ lark-cli mail +reply --message-id <邮件ID> --body '<回复正文>'
 
 用户明确同意后，发送该草稿：
 ```bash
-lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"me","draft_id":"<Step 1 返回的 draft_id>"}'
+lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"<mailbox>","draft_id":"<Step 1 返回的 draft_id>"}'
 ```
 
 **方式 B（允许）** — 用户已经明确确认回复对象和内容时，可直接使用 `--confirm-send` 立即发送。
@@ -143,7 +145,7 @@ lark-cli mail +reply --message-id <邮件ID> --body '<p>已处理，谢谢。</p
 # 向用户确认 "回复给 alice@example.com，内容「已处理，谢谢。」如果你想先看效果，也可以先去飞书邮件里查看草稿。确认发送吗？"
 
 # 用户确认后发送
-lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"me","draft_id":"<draft_id>"}'
+lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"<mailbox>","draft_id":"<draft_id>"}'
 
 # 方式 B: 用户已明确确认时，直接发送
 lark-cli mail +reply --message-id <邮件ID> --body '<p>已处理，谢谢。</p>' --confirm-send
@@ -158,13 +160,13 @@ lark-cli mail +reply --message-id <邮件ID> --body '<p>已处理，谢谢。</p
 # Step 2: 向用户确认 "回复草稿已创建：回复给 alice@example.com，内容「已处理，谢谢。」定时 <目标时间> 发送。确认吗？"
 
 # Step 3: 用户确认后定时发送（send_time 为 Unix 时间戳，需至少当前时间 + 5 分钟）
-lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"me","draft_id":"<draft_id>"}' --data '{"send_time":"<unix_timestamp>"}'
+lark-cli mail user_mailbox.drafts send --params '{"user_mailbox_id":"<mailbox>","draft_id":"<draft_id>"}' --data '{"send_time":"<unix_timestamp>"}'
 ```
 
 ### 场景 4：用户说"等等，先不回复了"（取消定时发送）
 ```bash
 # 取消定时发送（取消后邮件变回草稿）
-lark-cli mail user_mailbox.drafts cancel_scheduled_send --params '{"user_mailbox_id":"me","draft_id":"<draft_id>"}'
+lark-cli mail user_mailbox.drafts cancel_scheduled_send --params '{"user_mailbox_id":"<mailbox>","draft_id":"<draft_id>"}'
 ```
 → 取消成功后邮件恢复为草稿状态，用户可重新编辑或在之后重新发送。
 
@@ -199,7 +201,7 @@ References:  <原邮件references + smtp_message_id>
 用返回的 `message_id` 查询投递状态：
 
 ```bash
-lark-cli mail user_mailbox.messages send_status --params '{"user_mailbox_id":"me","message_id":"<发送返回的 message_id>"}'
+lark-cli mail user_mailbox.messages send_status --params '{"user_mailbox_id":"<mailbox>","message_id":"<发送返回的 message_id>"}'
 ```
 
 状态码：1=正在投递, 2=投递失败重试, 3=退信, 4=投递成功, 5=待审批, 6=审批拒绝。向用户简要报告投递结果，异常状态需重点提示。
@@ -211,7 +213,7 @@ lark-cli mail user_mailbox.messages send_status --params '{"user_mailbox_id":"me
 如需取消定时发送：
 
 ```bash
-lark-cli mail user_mailbox.drafts cancel_scheduled_send --params '{"user_mailbox_id":"me","draft_id":"<draft_id>"}'
+lark-cli mail user_mailbox.drafts cancel_scheduled_send --params '{"user_mailbox_id":"<mailbox>","draft_id":"<draft_id>"}'
 ```
 
 **取消后邮件会变回草稿**，可继续编辑或在之后重新发送。
