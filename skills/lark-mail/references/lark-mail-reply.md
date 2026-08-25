@@ -11,9 +11,10 @@
 
 本 skill 对应 shortcut：`lark-cli mail +reply`，内部步骤：
 1. `GET /open-apis/mail/v1/user_mailboxes/me/messages/{message_id}` — 获取原邮件元数据
-2. `GET /open-apis/mail/v1/user_mailboxes/me/profile` — 获取邮箱主地址（`primary_email_address`，填入默认 From 头）
-3. `POST /open-apis/mail/v1/user_mailboxes/me/drafts` — 创建草稿
-4. `POST /open-apis/mail/v1/user_mailboxes/me/drafts/{draft_id}/send` — 发送草稿（仅在指定 `--confirm-send` 时执行）
+2. `GET /open-apis/mail/v1/user_mailboxes/me/settings/send_as` — 获取可用发件地址，按 `--from`、`--mailbox`、原邮件收件地址、默认发件地址选择 From
+3. `GET /open-apis/mail/v1/user_mailboxes/me/profile` — 获取主邮箱地址，作为最后兜底 From
+4. `POST /open-apis/mail/v1/user_mailboxes/me/drafts` — 创建草稿
+5. `POST /open-apis/mail/v1/user_mailboxes/me/drafts/{draft_id}/send` — 发送草稿（仅在指定 `--confirm-send` 时执行）
 
 ## CRITICAL — 发送工作流（必须遵循）
 
