@@ -6,6 +6,7 @@ package mail
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/larksuite/cli/errs"
@@ -26,6 +27,7 @@ func newDraftEditRuntime(flags map[string]string) *common.RuntimeContext {
 		cmd.Flags().String(name, "", "")
 	}
 	cmd.Flags().Bool("remove-event", false, "")
+	cmd.Flags().Bool("request-receipt", false, "")
 	for name, val := range flags {
 		_ = cmd.Flags().Set(name, val)
 	}
@@ -219,6 +221,60 @@ func TestBuildDraftEditPatch_RemoveEventEmitsRemoveCalendarOp(t *testing.T) {
 	}
 	if len(patch.Ops) != 1 || patch.Ops[0].Op != "remove_calendar" {
 		t.Fatalf("expected single remove_calendar op, got %+v", patch.Ops)
+	}
+}
+
+func TestEffectiveDraftFromEmail_ReplaysSetFromForDownstreamConsumers(t *testing.T) {
+	snapshot := &draftpkg.DraftSnapshot{
+		From: []draftpkg.Address{{Address: "old@example.com"}},
+	}
+	ops := []draftpkg.PatchOp{
+		{Op: "set_header", Name: "From", Value: `"New Sender" <new@example.com>`},
+	}
+
+	got := effectiveDraftFromEmail(snapshot, ops)
+	if got != "new@example.com" {
+		t.Fatalf("effectiveDraftFromEmail() = %q, want new@example.com", got)
+	}
+	if err := requireSenderForRequestReceipt(newDraftEditRuntime(map[string]string{"request-receipt": "true"}), got); err != nil {
+		t.Fatalf("request receipt should accept replacement From: %v", err)
+	}
+	cal := string(buildCalendarBodyFromArgs(
+		"Team Sync",
+		"2026-05-10T10:00:00+08:00",
+		"2026-05-10T11:00:00+08:00",
+		"",
+		got,
+		"attendee@example.com",
+		"",
+	))
+	if !strings.Contains(cal, "ORGANIZER;ROLE=CHAIR;CN=new@example.com:MAILTO:new@example.com") {
+		t.Fatalf("calendar organizer should use replacement From, got:\n%s", cal)
+	}
+	if strings.Contains(cal, "old@example.com") {
+		t.Fatalf("calendar organizer should not use original From, got:\n%s", cal)
+	}
+}
+
+func TestEffectiveDraftFromEmail_ReplaysRemoveFromForRequestReceipt(t *testing.T) {
+	snapshot := &draftpkg.DraftSnapshot{
+		From: []draftpkg.Address{{Address: "old@example.com"}},
+	}
+	ops := []draftpkg.PatchOp{
+		{Op: "set_header", Name: "From", Value: "new@example.com"},
+		{Op: "remove_header", Name: "From"},
+	}
+
+	got := effectiveDraftFromEmail(snapshot, ops)
+	if got != "" {
+		t.Fatalf("effectiveDraftFromEmail() = %q, want empty after remove_header From", got)
+	}
+	err := requireSenderForRequestReceipt(newDraftEditRuntime(map[string]string{"request-receipt": "true"}), got)
+	if err == nil {
+		t.Fatal("expected request receipt to reject removed From")
+	}
+	if !strings.Contains(err.Error(), "--request-receipt") {
+		t.Fatalf("error should mention --request-receipt, got: %v", err)
 	}
 }
 
