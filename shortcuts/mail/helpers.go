@@ -404,15 +404,6 @@ func resolvePrimarySenderInfo(runtime *common.RuntimeContext, explicitMailbox st
 	return composeSenderInfo{Email: email}
 }
 
-func resolveDefaultSendAs(runtime *common.RuntimeContext, mailboxID string) (composeSenderInfo, bool) {
-	addrs, ok := fetchSendAsAddresses(runtime, mailboxID)
-	if !ok {
-		return composeSenderInfo{}, false
-	}
-	sender := pickSendAsAddress(addrs, "", "")
-	return sender, sender.Email != ""
-}
-
 func fetchSendAsAddresses(runtime *common.RuntimeContext, mailboxID string) ([]interface{}, bool) {
 	if runtime == nil || runtime.Factory == nil {
 		return nil, false
