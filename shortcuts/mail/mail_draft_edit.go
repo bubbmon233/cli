@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	netmail "net/mail"
 	"strings"
 
 	"github.com/larksuite/cli/shortcuts/common"
@@ -353,6 +354,23 @@ func draftEditFromHeader(raw string) (draftpkg.PatchOp, string, error) {
 	return draftpkg.PatchOp{Op: "set_header", Name: "From", Value: value}, addr.Address, nil
 }
 
+func validateDraftPatchFileFromHeaders(ops []draftpkg.PatchOp) error {
+	for _, op := range ops {
+		if op.Op != "set_header" || !strings.EqualFold(strings.TrimSpace(op.Name), "From") {
+			continue
+		}
+		if !hasExactlyOneRawMailbox(op.Value) {
+			return mailValidationParamError("--patch-file", "patch-file From header must contain exactly one sender address")
+		}
+	}
+	return nil
+}
+
+func hasExactlyOneRawMailbox(raw string) bool {
+	addrs, err := netmail.ParseAddressList(raw)
+	return err == nil && len(addrs) == 1 && strings.TrimSpace(addrs[0].Address) != ""
+}
+
 func effectiveDraftFromEmail(snapshot *draftpkg.DraftSnapshot, ops []draftpkg.PatchOp) string {
 	var email string
 	if len(snapshot.From) > 0 {
@@ -365,8 +383,10 @@ func effectiveDraftFromEmail(snapshot *draftpkg.DraftSnapshot, ops []draftpkg.Pa
 		switch op.Op {
 		case "set_header":
 			addrs := parseNetAddrs(op.Value)
-			if len(addrs) > 0 {
+			if len(addrs) == 1 {
 				email = addrs[0].Address
+			} else {
+				email = ""
 			}
 		case "remove_header":
 			email = ""
@@ -392,6 +412,9 @@ func buildDraftEditPatch(runtime *common.RuntimeContext) (draftpkg.Patch, error)
 	if patchFile != "" {
 		filePatch, err := loadPatchFile(runtime, patchFile)
 		if err != nil {
+			return patch, err
+		}
+		if err := validateDraftPatchFileFromHeaders(filePatch.Ops); err != nil {
 			return patch, err
 		}
 		patch.Ops = append(patch.Ops, filePatch.Ops...)
