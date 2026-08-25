@@ -154,8 +154,96 @@ func TestBuildDraftEditPatch_SetFromHeader(t *testing.T) {
 
 func TestBuildDraftEditPatch_SetFromRejectsMultiple(t *testing.T) {
 	rt := newDraftEditRuntime(map[string]string{"from": "a@example.com,b@example.com"})
-	if _, err := buildDraftEditPatch(rt); err == nil {
+	_, err := buildDraftEditPatch(rt)
+	if err == nil {
 		t.Fatal("expected error for multiple --from addresses")
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+	if validationErr.Param != "--from" {
+		t.Fatalf("param = %q, want --from", validationErr.Param)
+	}
+}
+
+func TestBuildDraftEditPatch_PatchFileRejectsMultipleFrom(t *testing.T) {
+	chdirTemp(t)
+	if err := os.WriteFile("patch.json", []byte(`{"ops":[{"op":"set_header","name":"From","value":"Alice <alice@example.com>, Bob <bob@example.com>"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, _, _, _ := mailShortcutTestFactory(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("from", "", "")
+	cmd.Flags().String("set-subject", "", "")
+	cmd.Flags().String("set-to", "", "")
+	cmd.Flags().String("set-cc", "", "")
+	cmd.Flags().String("set-bcc", "", "")
+	cmd.Flags().String("set-priority", "", "")
+	cmd.Flags().String("patch-file", "", "")
+	cmd.Flags().Bool("allow-protected-header-edit", false, "")
+	cmd.Flags().Bool("rewrite-entire-draft", false, "")
+	cmd.Flags().String("body", "", "")
+	cmd.Flags().String("body-file", "", "")
+	cmd.Flags().String("set-event-summary", "", "")
+	cmd.Flags().String("set-event-start", "", "")
+	cmd.Flags().String("set-event-end", "", "")
+	cmd.Flags().String("set-event-location", "", "")
+	cmd.Flags().Bool("remove-event", false, "")
+	cmd.Flags().Bool("request-receipt", false, "")
+	_ = cmd.Flags().Set("patch-file", "patch.json")
+
+	rt := &common.RuntimeContext{Cmd: cmd, Factory: f, Config: mailTestConfig()}
+	_, err := buildDraftEditPatch(rt)
+	if err == nil {
+		t.Fatal("expected error for patch-file From with multiple addresses")
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+	if validationErr.Param != "--patch-file" {
+		t.Fatalf("param = %q, want --patch-file", validationErr.Param)
+	}
+}
+
+func TestBuildDraftEditPatch_PatchFileRejectsDuplicateFromBeforeDedup(t *testing.T) {
+	chdirTemp(t)
+	if err := os.WriteFile("patch.json", []byte(`{"ops":[{"op":"set_header","name":"From","value":"Alice <alice@example.com>, Alias <ALICE@example.com>"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, _, _, _ := mailShortcutTestFactory(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("from", "", "")
+	cmd.Flags().String("set-subject", "", "")
+	cmd.Flags().String("set-to", "", "")
+	cmd.Flags().String("set-cc", "", "")
+	cmd.Flags().String("set-bcc", "", "")
+	cmd.Flags().String("set-priority", "", "")
+	cmd.Flags().String("patch-file", "", "")
+	cmd.Flags().Bool("allow-protected-header-edit", false, "")
+	cmd.Flags().Bool("rewrite-entire-draft", false, "")
+	cmd.Flags().String("body", "", "")
+	cmd.Flags().String("body-file", "", "")
+	cmd.Flags().String("set-event-summary", "", "")
+	cmd.Flags().String("set-event-start", "", "")
+	cmd.Flags().String("set-event-end", "", "")
+	cmd.Flags().String("set-event-location", "", "")
+	cmd.Flags().Bool("remove-event", false, "")
+	cmd.Flags().Bool("request-receipt", false, "")
+	_ = cmd.Flags().Set("patch-file", "patch.json")
+
+	rt := &common.RuntimeContext{Cmd: cmd, Factory: f, Config: mailTestConfig()}
+	_, err := buildDraftEditPatch(rt)
+	if err == nil {
+		t.Fatal("expected error for duplicate patch-file From entries")
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+	if validationErr.Param != "--patch-file" {
+		t.Fatalf("param = %q, want --patch-file", validationErr.Param)
 	}
 }
 
