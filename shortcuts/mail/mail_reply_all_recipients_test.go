@@ -5,9 +5,11 @@ package mail
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/httpmock"
 )
 
@@ -59,25 +61,61 @@ func TestBuildReplyAllRecipientsSelfSentAddsOnlyRealReplyTo(t *testing.T) {
 	}
 }
 
+func TestRecipientSetContainsDifferentOwnedSenderAddress(t *testing.T) {
+	selfEmails := map[string]bool{
+		"primary@example.com": true,
+		"alias@example.com":   true,
+	}
+	if !recipientSetContains(selfEmails, "Primary <PRIMARY@example.com>") {
+		t.Fatal("primary address should be recognized as self when sending from an alias")
+	}
+
+	isSelfSent := recipientSetContains(selfEmails, "primary@example.com") ||
+		sameRecipientAddress("primary@example.com", "alias@example.com")
+	to, cc := buildReplyAllRecipients(
+		"",
+		[]string{"primary@example.com"},
+		nil,
+		"alias@example.com",
+		selfEmails,
+		isSelfSent,
+	)
+	if to != "primary@example.com" || cc != "" {
+		t.Fatalf("got to=%q cc=%q", to, cc)
+	}
+}
+
 func TestFilterAndDeduplicateReplyAllRecipients(t *testing.T) {
 	remove, err := buildRemoveSet([]string{"remove@example.com", "Me <ME@example.com>"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
-		`First Person <First@example.com>, remove@example.com`,
-		`duplicate <first@EXAMPLE.com>, Second <second@example.com>, me@example.com`,
-		`SECOND@example.com, bcc@example.com`,
+		`First Person <First@example.com>, FIRST@example.com, remove@example.com`,
+		`duplicate <first@EXAMPLE.com>, Second <second@example.com>, SECOND@example.com, me@example.com`,
+		`SECOND@example.com, bcc@example.com, BCC@example.com`,
 		remove,
 	)
 	if to != "First Person <First@example.com>" {
 		t.Fatalf("to = %q", to)
 	}
-	if cc != "Second <second@example.com>" {
+	if cc != "duplicate <first@EXAMPLE.com>, Second <second@example.com>" {
 		t.Fatalf("cc = %q", cc)
 	}
-	if bcc != "bcc@example.com" {
+	if bcc != "SECOND@example.com, bcc@example.com" {
 		t.Fatalf("bcc = %q", bcc)
+	}
+}
+
+func TestBuildRemoveSetAcceptsQuotedDisplayNameAndCommaList(t *testing.T) {
+	remove, err := buildRemoveSet([]string{
+		`"Doe, Jane" <Jane@example.com>, second@example.com`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !remove["jane@example.com"] || !remove["second@example.com"] {
+		t.Fatalf("remove = %v", remove)
 	}
 }
 
@@ -85,6 +123,26 @@ func TestBuildRemoveSetRejectsInvalidAddress(t *testing.T) {
 	_, err := buildRemoveSet([]string{"not-an-email"})
 	if err == nil || !strings.Contains(err.Error(), "invalid email address") {
 		t.Fatalf("err = %v", err)
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error type = %T, want *errs.ValidationError", err)
+	}
+	if validationErr.Param != "--remove" || errors.Unwrap(err) == nil {
+		t.Fatalf("validation error = %#v, cause = %v", validationErr, errors.Unwrap(err))
+	}
+}
+
+func TestFilterAndDeduplicateReplyAllRecipientsDropsMalformedAddresses(t *testing.T) {
+	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
+		"undisclosed-recipients:;", "not-an-address", "",
+		nil,
+	)
+	if to != "" || cc != "" || bcc != "" {
+		t.Fatalf("got to=%q cc=%q bcc=%q", to, cc, bcc)
+	}
+	if err := validateReplyAllRecipients(to, cc, bcc); err == nil {
+		t.Fatal("expected validation error after malformed recipients were removed")
 	}
 }
 
@@ -105,6 +163,14 @@ func TestValidateReplyAllRecipientsRejectsEmptyResult(t *testing.T) {
 	err := validateReplyAllRecipients("", "", "")
 	if err == nil || !strings.Contains(err.Error(), "no valid recipients") {
 		t.Fatalf("err = %v", err)
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error type = %T, want *errs.ValidationError", err)
+	}
+	if len(validationErr.Params) != 1 || validationErr.Params[0].Name != "--remove" ||
+		validationErr.Params[0].Reason != "all recipients were removed" {
+		t.Fatalf("params = %#v", validationErr.Params)
 	}
 }
 
@@ -160,5 +226,123 @@ func TestMailReplyAllSelfSentCreatesThreadDraftByDefault(t *testing.T) {
 	}
 	if !strings.Contains(raw, "X-LMS-Reply-To-Message-Id: msg_self") {
 		t.Fatalf("original thread linkage header missing from draft EML:\n%s", raw)
+	}
+}
+
+func TestMailReplyAllSelfSentFromOwnedAddressWhileSendingAsAlias(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	stubMailboxProfile(reg, "primary@example.com")
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/messages/msg_self_alias",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"message": map[string]interface{}{
+					"message_id":      "msg_self_alias",
+					"thread_id":       "thread_self_alias",
+					"smtp_message_id": "<self-alias@smtp.example.com>",
+					"subject":         "self sent with alternate sender",
+					"head_from": map[string]interface{}{
+						"mail_address": "primary@example.com",
+						"name":         "Primary",
+					},
+					"to": []interface{}{
+						map[string]interface{}{"mail_address": "primary@example.com", "name": "Primary"},
+					},
+					"body_plain_text": base64.RawURLEncoding.EncodeToString([]byte("original body")),
+				},
+			},
+		},
+	})
+	createStub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "draft_self_alias"},
+		},
+	}
+	reg.Register(createStub)
+
+	err := runMountedMailShortcut(t, MailReplyAll, []string{
+		"+reply-all",
+		"--mailbox", "me",
+		"--from", "alias@example.com",
+		"--message-id", "msg_self_alias",
+		"--body", "reply body",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("reply-all self-sent draft with alias failed: %v", err)
+	}
+	raw := decodeCapturedRawEML(t, createStub.CapturedBody)
+	if !strings.Contains(raw, "From: <alias@example.com>") {
+		t.Fatalf("alias sender missing from draft EML:\n%s", raw)
+	}
+	if !strings.Contains(raw, "To: <primary@example.com>") {
+		t.Fatalf("original self recipient missing from draft EML:\n%s", raw)
+	}
+}
+
+func TestMailReplyAllRemoveAppliesToTemplateRecipients(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	stubMailboxProfile(reg, "me@example.com")
+	stubGetTemplate(
+		reg,
+		"123",
+		[]interface{}{map[string]interface{}{"mail_address": "remove@example.com", "name": "Remove"}},
+		nil,
+		nil,
+		nil,
+	)
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/messages/msg_template_remove",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"message": map[string]interface{}{
+					"message_id":      "msg_template_remove",
+					"thread_id":       "thread_template_remove",
+					"smtp_message_id": "<template-remove@smtp.example.com>",
+					"subject":         "template recipient removal",
+					"head_from": map[string]interface{}{
+						"mail_address": "sender@example.com",
+						"name":         "Sender",
+					},
+					"to": []interface{}{
+						map[string]interface{}{"mail_address": "me@example.com", "name": "Me"},
+					},
+					"body_plain_text": base64.RawURLEncoding.EncodeToString([]byte("original body")),
+				},
+			},
+		},
+	})
+	createStub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "draft_template_remove"},
+		},
+	}
+	reg.Register(createStub)
+
+	err := runMountedMailShortcut(t, MailReplyAll, []string{
+		"+reply-all",
+		"--message-id", "msg_template_remove",
+		"--body", "reply body",
+		"--template-id", "123",
+		"--remove", "Remove <remove@example.com>",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("reply-all with template removal failed: %v", err)
+	}
+	raw := decodeCapturedRawEML(t, createStub.CapturedBody)
+	if strings.Contains(strings.ToLower(raw), "remove@example.com") {
+		t.Fatalf("explicitly removed template recipient remains in draft EML:\n%s", raw)
+	}
+	if !strings.Contains(raw, "To: <sender@example.com>") {
+		t.Fatalf("reply target missing from draft EML:\n%s", raw)
 	}
 }

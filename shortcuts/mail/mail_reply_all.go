@@ -42,7 +42,7 @@ var MailReplyAll = common.Shortcut{
 		{Name: "send-time", Desc: "Scheduled send time as a Unix timestamp in seconds. Must be at least 5 minutes in the future. Use with --confirm-send to schedule the email."},
 		{Name: "request-receipt", Type: "bool", Desc: "Request a read receipt (Message Disposition Notification, RFC 3798) addressed to the sender. Recipient mail clients may prompt the user, send automatically, or silently ignore — delivery of a receipt is not guaranteed."},
 		{Name: "subject", Desc: "Optional. Override the auto-generated Re: subject. When set, the shortcut uses this value verbatim instead of prefixing the original subject."},
-		{Name: "template-id", Desc: "Optional. Apply a saved template by ID (decimal integer string) before composing. The template's body/to/cc/bcc/attachments are appended to the reply-derived values (no de-duplication; see warning in Execute output)."},
+		{Name: "template-id", Desc: "Optional. Apply a saved template by ID (decimal integer string) before composing. The template's body/to/cc/bcc/attachments are appended to the reply-derived values."},
 		signatureFlag,
 		noSignatureFlag,
 		priorityFlag,
@@ -71,7 +71,7 @@ var MailReplyAll = common.Shortcut{
 		return api
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
-		if _, err := buildRemoveSet(normalizeCommaListFlagValues(runtime.StrArray("remove"))); err != nil {
+		if _, err := buildRemoveSet(runtime.StrArray("remove")); err != nil {
 			return err
 		}
 		attach := normalizeCommaFlagValues(runtime.StrArray("attach"))
@@ -124,7 +124,7 @@ var MailReplyAll = common.Shortcut{
 		toFlag := normalizeRecipientFlagValues(runtime.StrArray("to"))
 		ccFlag := normalizeRecipientFlagValues(runtime.StrArray("cc"))
 		bccFlag := normalizeRecipientFlagValues(runtime.StrArray("bcc"))
-		removeList := normalizeCommaListFlagValues(runtime.StrArray("remove"))
+		removeList := runtime.StrArray("remove")
 		removeSet, err := buildRemoveSet(removeList)
 		if err != nil {
 			return err
@@ -184,7 +184,7 @@ var MailReplyAll = common.Shortcut{
 
 		selfEmails := fetchSelfEmailSet(runtime, mailboxID)
 		replyTarget := orig.replyTo
-		isSelfSent := sameRecipientAddress(orig.headFrom, senderEmail)
+		isSelfSent := recipientSetContains(selfEmails, orig.headFrom) || sameRecipientAddress(orig.headFrom, senderEmail)
 		if !isSelfSent && replyTarget == "" {
 			replyTarget = orig.headFrom
 		}
@@ -399,13 +399,33 @@ var MailReplyAll = common.Shortcut{
 	},
 }
 
+// recipientAddressKey returns the normalized bare email used for recipient
+// comparison and de-duplication.
 func recipientAddressKey(raw string) string {
 	return strings.ToLower(strings.TrimSpace(ParseMailbox(raw).Email))
 }
 
+// sameRecipientAddress reports whether two mailbox strings identify the same
+// non-empty email address.
 func sameRecipientAddress(left, right string) bool {
 	leftKey := recipientAddressKey(left)
 	return leftKey != "" && leftKey == recipientAddressKey(right)
+}
+
+// recipientSetContains reports whether raw belongs to a normalized set of
+// current-user addresses. Normalizing both sides keeps display-name and case
+// differences from changing self-sent detection.
+func recipientSetContains(set map[string]bool, raw string) bool {
+	key := recipientAddressKey(raw)
+	if key == "" {
+		return false
+	}
+	for candidate, included := range set {
+		if included && recipientAddressKey(candidate) == key {
+			return true
+		}
+	}
+	return false
 }
 
 // buildRemoveSet validates explicit removals and indexes them by bare email
@@ -414,16 +434,23 @@ func sameRecipientAddress(left, right string) bool {
 // explicitly removes them.
 func buildRemoveSet(remove []string) (map[string]bool, error) {
 	set := make(map[string]bool, len(remove))
-	for _, raw := range remove {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
+	for _, rawList := range remove {
+		rawList = strings.TrimSpace(rawList)
+		if rawList == "" {
 			return nil, mailValidationParamError("--remove", "email address must not be empty")
 		}
-		addr, err := netmail.ParseAddress(raw)
-		if err != nil || strings.TrimSpace(addr.Address) == "" {
-			return nil, mailValidationParamError("--remove", "invalid email address %q", raw)
+		addresses, err := netmail.ParseAddressList(rawList)
+		if err != nil {
+			return nil, mailValidationParamError("--remove", "invalid email address %q", rawList).
+				WithCause(err)
 		}
-		set[strings.ToLower(strings.TrimSpace(addr.Address))] = true
+		for _, addr := range addresses {
+			key := strings.ToLower(strings.TrimSpace(addr.Address))
+			if key == "" {
+				return nil, mailValidationParamError("--remove", "invalid email address %q", rawList)
+			}
+			set[key] = true
+		}
 	}
 	return set, nil
 }
@@ -502,14 +529,18 @@ func buildReplyAllRecipients(replyTarget string, origTo, origCC []string, sender
 
 // filterAndDeduplicateReplyAllRecipients applies explicit removals after all
 // sources (original message, flags and template) have been merged. It then
-// performs one stable, case-insensitive de-duplication pass across To, Cc and
-// Bcc, so the first occurrence keeps its list, display text and position.
+// performs stable, case-insensitive de-duplication within each recipient list.
+// To, Cc and Bcc remain independent so explicit list placement is preserved.
 func filterAndDeduplicateReplyAllRecipients(to, cc, bcc string, remove map[string]bool) (string, string, string) {
-	seen := make(map[string]bool)
 	filter := func(raw string) string {
+		seen := make(map[string]bool)
 		kept := make([]string, 0, len(ParseMailboxList(raw)))
 		for _, mailbox := range ParseMailboxList(raw) {
-			key := strings.ToLower(strings.TrimSpace(mailbox.Email))
+			addr, err := netmail.ParseAddress(mailbox.Email)
+			if err != nil {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(addr.Address))
 			if key == "" || remove[key] || seen[key] {
 				continue
 			}
@@ -521,6 +552,8 @@ func filterAndDeduplicateReplyAllRecipients(to, cc, bcc string, remove map[strin
 	return filter(to), filter(cc), filter(bcc)
 }
 
+// validateReplyAllRecipients rejects a reply-all whose filtering step left no
+// valid address in To, Cc or Bcc.
 func validateReplyAllRecipients(to, cc, bcc string) error {
 	if strings.TrimSpace(to) != "" || strings.TrimSpace(cc) != "" || strings.TrimSpace(bcc) != "" {
 		return nil
