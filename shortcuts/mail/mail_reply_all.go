@@ -522,6 +522,9 @@ func filterAndDeduplicateReplyAllRecipients(to, cc, bcc string, remove map[strin
 		addresses := parseNetAddrs(raw)
 		kept := make([]string, 0, len(addresses))
 		for _, address := range addresses {
+			if _, err := netmail.ParseAddress(address.Address); err != nil {
+				continue
+			}
 			key := strings.ToLower(strings.TrimSpace(address.Address))
 			if key == "" || remove[key] {
 				continue

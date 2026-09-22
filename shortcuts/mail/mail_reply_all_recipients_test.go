@@ -405,3 +405,33 @@ func TestMailReplyAllRemoveAppliesToTemplateRecipients(t *testing.T) {
 		t.Fatalf("reply target missing from draft EML:\n%s", raw)
 	}
 }
+
+func TestFilterReplyAllRecipientsRejectsInvalidMailboxes(t *testing.T) {
+	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
+		"undisclosed-recipients:;, removed@example.com",
+		"not-an-email",
+		"invalid@",
+		map[string]bool{"removed@example.com": true},
+	)
+	if to != "" || cc != "" || bcc != "" {
+		t.Fatalf("got to=%q cc=%q bcc=%q", to, cc, bcc)
+	}
+	err := validateReplyAllRecipients(to, cc, bcc)
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %v, want *errs.ValidationError", err)
+	}
+}
+
+func TestFilterReplyAllRecipientsKeepsValidMailboxesInOrder(t *testing.T) {
+	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
+		"undisclosed-recipients:;, First <First@example.com>, not-an-email, second@example.com, FIRST@example.com",
+		"invalid@, Copy <copy@example.com>",
+		"undisclosed-recipients:;, hidden@example.com",
+		nil,
+	)
+	if to != "First <First@example.com>, second@example.com" ||
+		cc != "Copy <copy@example.com>" || bcc != "hidden@example.com" {
+		t.Fatalf("got to=%q cc=%q bcc=%q", to, cc, bcc)
+	}
+}
