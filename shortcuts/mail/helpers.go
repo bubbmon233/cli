@@ -368,23 +368,43 @@ func resolveComposeSenderEmail(runtime *common.RuntimeContext) string {
 	return email
 }
 
-// fetchSelfEmailSet returns a set of addresses to exclude as "self" in
-// reply-all. It always tries profile("me"); when mailboxID or senderEmail
-// differ from "me", those are added to the set as well so that shared-
-// mailbox and alias addresses are also excluded.
+// fetchSelfEmailSet returns all known addresses owned by the composing
+// mailbox. In addition to the primary, explicit mailbox and --from values, it
+// includes every address exposed by settings/send_as so reply-all can
+// recognize messages sent from an alias even when --from is omitted.
 func fetchSelfEmailSet(runtime *common.RuntimeContext, mailboxID string) map[string]bool {
 	set := make(map[string]bool)
+	add := func(raw string) {
+		if key := recipientAddressKey(raw); key != "" {
+			set[key] = true
+		}
+	}
 	// Always include the "me" primary email.
 	if email, _ := fetchMailboxPrimaryEmail(runtime, "me"); email != "" {
-		set[strings.ToLower(email)] = true
+		add(email)
 	}
 	// Include mailboxID itself (covers shared mailbox addresses).
 	if mailboxID != "" && mailboxID != "me" {
-		set[strings.ToLower(mailboxID)] = true
+		add(mailboxID)
 	}
 	// Include --from alias address so it's excluded from reply-all recipients.
 	if from := runtime.Str("from"); from != "" {
-		set[strings.ToLower(from)] = true
+		add(from)
+	}
+	// Best effort: older tenants or restricted mailboxes may not expose
+	// settings/send_as. The primary/mailbox/from values above remain a safe
+	// fallback in that case.
+	if data, err := runtime.CallAPITyped("GET", mailboxPath(mailboxID, "settings", "send_as"), nil, nil); err == nil {
+		if addresses, ok := data["sendable_addresses"].([]interface{}); ok {
+			for _, raw := range addresses {
+				address, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				email, _ := address["email_address"].(string)
+				add(email)
+			}
+		}
 	}
 	return set
 }

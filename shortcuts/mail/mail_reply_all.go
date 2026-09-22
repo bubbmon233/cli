@@ -63,6 +63,7 @@ var MailReplyAll = common.Shortcut{
 		}
 		api = api.GET(mailboxPath(mailboxID, "messages", messageId)).
 			GET(mailboxPath(mailboxID, "profile")).
+			GET(mailboxPath(mailboxID, "settings", "send_as")).
 			POST(mailboxPath(mailboxID, "drafts")).
 			Body(map[string]interface{}{"raw": "<base64url-EML>"})
 		if confirmSend {

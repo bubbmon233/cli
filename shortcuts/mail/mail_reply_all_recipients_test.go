@@ -284,6 +284,78 @@ func TestMailReplyAllSelfSentFromOwnedAddressWhileSendingAsAlias(t *testing.T) {
 	}
 }
 
+func TestMailReplyAllSelfSentAliasWithoutExplicitFromPreservesOriginalRecipients(t *testing.T) {
+	f, stdout, _, reg := mailShortcutTestFactory(t)
+	stubMailboxProfile(reg, "primary@example.com")
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/settings/send_as",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"sendable_addresses": []interface{}{
+					map[string]interface{}{"email_address": "primary@example.com", "email_type": "USER_PRIMARY"},
+					map[string]interface{}{"email_address": "alias@example.com", "email_type": "USER_ALIAS"},
+				},
+			},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/user_mailboxes/me/messages/msg_self_alias_default",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{
+				"message": map[string]interface{}{
+					"message_id":      "msg_self_alias_default",
+					"thread_id":       "thread_self_alias_default",
+					"smtp_message_id": "<self-alias-default@smtp.example.com>",
+					"subject":         "self sent from alias to primary",
+					"head_from": map[string]interface{}{
+						"mail_address": "alias@example.com",
+						"name":         "Alias",
+					},
+					"to": []interface{}{
+						map[string]interface{}{"mail_address": "primary@example.com", "name": "Primary"},
+					},
+					"body_plain_text": base64.RawURLEncoding.EncodeToString([]byte("original body")),
+				},
+			},
+		},
+	})
+	createStub := &httpmock.Stub{
+		Method: "POST",
+		URL:    "/user_mailboxes/me/drafts",
+		Body: map[string]interface{}{
+			"code": 0,
+			"data": map[string]interface{}{"draft_id": "draft_self_alias_default"},
+		},
+	}
+	reg.Register(createStub)
+
+	err := runMountedMailShortcut(t, MailReplyAll, []string{
+		"+reply-all",
+		"--message-id", "msg_self_alias_default",
+		"--body", "reply body",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("reply-all self-sent alias draft failed: %v", err)
+	}
+	raw := decodeCapturedRawEML(t, createStub.CapturedBody)
+	if !strings.Contains(raw, "From: <primary@example.com>") {
+		t.Fatalf("default primary sender missing from draft EML:\n%s", raw)
+	}
+	if !strings.Contains(raw, "To: <primary@example.com>") {
+		t.Fatalf("original primary recipient was not preserved:\n%s", raw)
+	}
+	if strings.Contains(raw, "To: <alias@example.com>") {
+		t.Fatalf("alias sender incorrectly replaced original To recipient:\n%s", raw)
+	}
+	if !strings.Contains(raw, "X-LMS-Reply-To-Message-Id: msg_self_alias_default") {
+		t.Fatalf("original thread linkage header missing from draft EML:\n%s", raw)
+	}
+}
+
 func TestMailReplyAllRemoveAppliesToTemplateRecipients(t *testing.T) {
 	f, stdout, _, reg := mailShortcutTestFactory(t)
 	stubMailboxProfile(reg, "me@example.com")
