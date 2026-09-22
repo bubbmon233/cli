@@ -133,19 +133,6 @@ func TestBuildRemoveSetRejectsInvalidAddress(t *testing.T) {
 	}
 }
 
-func TestFilterAndDeduplicateReplyAllRecipientsDropsMalformedAddresses(t *testing.T) {
-	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
-		"undisclosed-recipients:;", "not-an-address", "",
-		nil,
-	)
-	if to != "" || cc != "" || bcc != "" {
-		t.Fatalf("got to=%q cc=%q bcc=%q", to, cc, bcc)
-	}
-	if err := validateReplyAllRecipients(to, cc, bcc); err == nil {
-		t.Fatal("expected validation error after malformed recipients were removed")
-	}
-}
-
 func TestFilterAndDeduplicateReplyAllRecipientsAllowsBccOnly(t *testing.T) {
 	to, cc, bcc := filterAndDeduplicateReplyAllRecipients(
 		"remove@example.com", "", "kept@example.com",

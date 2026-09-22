@@ -400,12 +400,6 @@ var MailReplyAll = common.Shortcut{
 	},
 }
 
-// recipientAddressKey returns the normalized bare email used for recipient
-// comparison and de-duplication.
-func recipientAddressKey(raw string) string {
-	return strings.ToLower(strings.TrimSpace(ParseMailbox(raw).Email))
-}
-
 // sameRecipientAddress reports whether two mailbox strings identify the same
 // non-empty email address.
 func sameRecipientAddress(left, right string) bool {
@@ -418,15 +412,7 @@ func sameRecipientAddress(left, right string) bool {
 // differences from changing self-sent detection.
 func recipientSetContains(set map[string]bool, raw string) bool {
 	key := recipientAddressKey(raw)
-	if key == "" {
-		return false
-	}
-	for candidate, included := range set {
-		if included && recipientAddressKey(candidate) == key {
-			return true
-		}
-	}
-	return false
+	return key != "" && set[key]
 }
 
 // buildRemoveSet validates explicit removals and indexes them by bare email
@@ -529,24 +515,18 @@ func buildReplyAllRecipients(replyTarget string, origTo, origCC []string, sender
 }
 
 // filterAndDeduplicateReplyAllRecipients applies explicit removals after all
-// sources (original message, flags and template) have been merged. It then
-// performs stable, case-insensitive de-duplication within each recipient list.
-// To, Cc and Bcc remain independent so explicit list placement is preserved.
+// sources (original message, flags and template) have been merged. It reuses
+// parseNetAddrs for the existing stable, case-insensitive per-list de-duplication.
 func filterAndDeduplicateReplyAllRecipients(to, cc, bcc string, remove map[string]bool) (string, string, string) {
 	filter := func(raw string) string {
-		seen := make(map[string]bool)
-		kept := make([]string, 0, len(ParseMailboxList(raw)))
-		for _, mailbox := range ParseMailboxList(raw) {
-			addr, err := netmail.ParseAddress(mailbox.Email)
-			if err != nil {
+		addresses := parseNetAddrs(raw)
+		kept := make([]string, 0, len(addresses))
+		for _, address := range addresses {
+			key := strings.ToLower(strings.TrimSpace(address.Address))
+			if key == "" || remove[key] {
 				continue
 			}
-			key := strings.ToLower(strings.TrimSpace(addr.Address))
-			if key == "" || remove[key] || seen[key] {
-				continue
-			}
-			seen[key] = true
-			kept = append(kept, mailbox.rawString())
+			kept = append(kept, (Mailbox{Name: address.Name, Email: address.Address}).rawString())
 		}
 		return strings.Join(kept, ", ")
 	}
